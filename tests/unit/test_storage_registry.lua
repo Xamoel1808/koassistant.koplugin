@@ -480,7 +480,9 @@ end)
 TestRunner:test("quickResetFreshStart consumes resetEntries(fresh_start) (structural, flags audit I3)", function()
     local f = assert(io.open(PLUGIN_DIR .. "/main.lua", "r"))
     local src = f:read("*all"); f:close()
-    local body = src:match("function AskGPT:quickResetFreshStart%(%).-\nend\n")
+    -- The repository is commonly checked out with CRLF on Windows; keep this
+    -- structural audit independent of the working-tree line ending.
+    local body = src:match("function AskGPT:quickResetFreshStart%(%).-[\r\n]end[\r\n]")
     TestRunner:assertTrue(body ~= nil, "quickResetFreshStart found")
     TestRunner:assertTrue(body:find('resetEntries%("fresh_start"%)') ~= nil, "must walk the registry's fresh_start entries")
     TestRunner:assertTrue(body:find('chat_storage_version') ~= nil, "must gate on the v1 import being complete")
