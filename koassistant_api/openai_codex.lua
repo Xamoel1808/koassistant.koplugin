@@ -26,6 +26,42 @@ local function buildHeaders(config)
     }
 end
 
+-- Shared by the X-Ray portrait generator.  Keeping the subscription headers
+-- here prevents the image path from growing a second OAuth/header dialect.
+function CodexHandler.buildImageHeaders(auth)
+    local headers = buildHeaders({
+        api_key = auth and auth.access_token,
+        oauth = auth,
+    })
+    headers.Accept = "text/event-stream"
+    return headers
+end
+
+function CodexHandler.buildImageRequest(prompt, model)
+    return {
+        model = model or "gpt-5.6-terra",
+        stream = true,
+        store = false,
+        input = {
+            {
+                type = "message",
+                role = "user",
+                content = {
+                    { type = "input_text", text = prompt or "" },
+                },
+            },
+        },
+        tools = {
+            { type = "image_generation", action = "generate" },
+        },
+        tool_choice = { type = "image_generation" },
+    }
+end
+
+function CodexHandler.getEndpoint()
+    return CODEX_URL
+end
+
 -- Codex requires SSE even when KOAssistant's caller expects one buffered
 -- response. Keep that transport quirk local while reusing BaseHandler's
 -- fork-safe HTTP implementation and pipe protocol.
