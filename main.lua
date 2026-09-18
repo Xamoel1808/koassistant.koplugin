@@ -19490,6 +19490,9 @@ function AskGPT:openXrayCard(query, opts)
     -- anchored at the tapped word when the landing carried geometry
     style = card_mode,
     ui = self.ui,
+    document_path = file,
+    features = features,
+    show_entity_portraits = features.xray_entity_portraits_compact ~= false,
     sboxes = opts and opts.sboxes or nil,
     on_full = openFull,
     card_length = marking.card_length,
@@ -21171,6 +21174,7 @@ function AskGPT:showCreateBackupDialog()
     include_configs = true,
     include_content = true,
     include_chats = false,
+    include_entity_images = false,
   })
 end
 
@@ -21182,6 +21186,7 @@ function AskGPT:_showBackupOptionsDialog(backup_manager, notes, state)
   local include_configs = state.include_configs
   local include_content = state.include_content
   local include_chats = state.include_chats
+  local include_entity_images = state.include_entity_images
 
   -- Use ButtonDialog for interactive checkbox-like behavior
   local ButtonDialog = require("ui/widget/buttondialog")
@@ -21204,6 +21209,7 @@ function AskGPT:_showBackupOptionsDialog(backup_manager, notes, state)
             include_configs = include_configs,
             include_content = include_content,
             include_chats = include_chats,
+            include_entity_images = include_entity_images,
           })
         end,
       },
@@ -21219,6 +21225,7 @@ function AskGPT:_showBackupOptionsDialog(backup_manager, notes, state)
             include_configs = not include_configs,
             include_content = include_content,
             include_chats = include_chats,
+            include_entity_images = include_entity_images,
           })
         end,
       },
@@ -21234,6 +21241,7 @@ function AskGPT:_showBackupOptionsDialog(backup_manager, notes, state)
             include_configs = include_configs,
             include_content = not include_content,
             include_chats = include_chats,
+            include_entity_images = include_entity_images,
           })
         end,
       },
@@ -21249,8 +21257,31 @@ function AskGPT:_showBackupOptionsDialog(backup_manager, notes, state)
             include_configs = include_configs,
             include_content = include_content,
             include_chats = not include_chats,
+            include_entity_images = include_entity_images,
           })
         end,
+      },
+    },
+    {
+      {
+        text = include_entity_images and _("Entity Portrait Images: ✓ Include") or _("Entity Portrait Images: ✗ Metadata only"),
+        callback = function()
+          UIManager:close(dialog)
+          self:_showBackupOptionsDialog(backup_manager, notes, {
+            include_settings = include_settings,
+            include_api_keys = include_api_keys,
+            include_configs = include_configs,
+            include_content = include_content,
+            include_chats = include_chats,
+            include_entity_images = not include_entity_images,
+          })
+        end,
+      },
+    },
+    {
+      {
+        text = _("(Portrait metadata is included with Core Settings; image files are opt-in)"),
+        enabled = false,
       },
     },
     {
@@ -21271,6 +21302,7 @@ function AskGPT:_showBackupOptionsDialog(backup_manager, notes, state)
             include_configs = include_configs,
             include_content = include_content,
             include_chats = include_chats,
+            include_entity_images = include_entity_images,
             notes = notes,
           }
 
@@ -21341,6 +21373,9 @@ function AskGPT:_performBackup(backup_manager, options)
       else
         table.insert(included, _("0 chats"))
       end
+    end
+    if options.include_entity_images then
+      table.insert(included, _("Entity portrait images"))
     end
 
     if #included > 0 then
@@ -21473,6 +21508,11 @@ function AskGPT:_showRestorePreviewDialog(backup_manager, backup)
       table.insert(contents, "• " .. _("Chat history"))
     end
   end
+  if manifest.contents.entity_media_metadata then
+    table.insert(contents, "• " .. (manifest.contents.entity_images
+        and _("Entity portrait metadata and images")
+        or _("Entity portrait metadata (image files not included)")))
+  end
 
   if #contents > 0 then
     preview = preview .. "\n" .. table.concat(contents, "\n")
@@ -21512,13 +21552,14 @@ end
 -- Show restore options dialog (internal helper)
 function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, state)
   -- Use provided state or defaults from manifest
-  local restore_settings, restore_api_keys, restore_configs, restore_content, restore_chats, merge_mode
+  local restore_settings, restore_api_keys, restore_configs, restore_content, restore_chats, restore_entity_images, merge_mode
   if state then
     restore_settings = state.restore_settings
     restore_api_keys = state.restore_api_keys
     restore_configs = state.restore_configs
     restore_content = state.restore_content
     restore_chats = state.restore_chats
+    restore_entity_images = state.restore_entity_images
     merge_mode = state.merge_mode
   else
     restore_settings = manifest.contents.settings or false
@@ -21526,6 +21567,7 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
     restore_configs = manifest.contents.config_files or false
     restore_content = (manifest.contents.domains or manifest.contents.behaviors) or false
     restore_chats = manifest.contents.chats or false
+    restore_entity_images = manifest.contents.entity_images or false
     merge_mode = false
   end
 
@@ -21544,6 +21586,7 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
             restore_configs = restore_configs,
             restore_content = restore_content,
             restore_chats = restore_chats,
+            restore_entity_images = restore_entity_images,
             merge_mode = merge_mode,
           })
         end,
@@ -21561,6 +21604,7 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
             restore_configs = restore_configs,
             restore_content = restore_content,
             restore_chats = restore_chats,
+            restore_entity_images = restore_entity_images,
             merge_mode = merge_mode,
           })
         end,
@@ -21578,6 +21622,7 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
             restore_configs = not restore_configs,
             restore_content = restore_content,
             restore_chats = restore_chats,
+            restore_entity_images = restore_entity_images,
             merge_mode = merge_mode,
           })
         end,
@@ -21595,6 +21640,7 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
             restore_configs = restore_configs,
             restore_content = not restore_content,
             restore_chats = restore_chats,
+            restore_entity_images = restore_entity_images,
             merge_mode = merge_mode,
           })
         end,
@@ -21612,9 +21658,40 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
             restore_configs = restore_configs,
             restore_content = restore_content,
             restore_chats = not restore_chats,
+            restore_entity_images = restore_entity_images,
             merge_mode = merge_mode,
           })
         end,
+      },
+    },
+    {
+      {
+        text = restore_entity_images and _("Entity Portrait Images: ✓ Restore") or _("Entity Portrait Images: ✗ Skip"),
+        enabled = manifest.contents.entity_images,
+        callback = function()
+          UIManager:close(dialog)
+          self:_showRestoreOptionsDialog(backup_manager, backup, manifest, {
+            restore_settings = restore_settings,
+            restore_api_keys = restore_api_keys,
+            restore_configs = restore_configs,
+            restore_content = restore_content,
+            restore_chats = restore_chats,
+            restore_entity_images = not restore_entity_images,
+            merge_mode = merge_mode,
+          })
+        end,
+      },
+    },
+    {
+      {
+        text = _("(Portrait metadata follows Settings; binaries are optional)"),
+        enabled = false,
+      },
+    },
+    {
+      {
+        text = _("━━━━━━━━━━━━━━━━"),
+        enabled = false,
       },
     },
     {
@@ -21634,6 +21711,7 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
             restore_configs = restore_configs,
             restore_content = restore_content,
             restore_chats = restore_chats,
+            restore_entity_images = restore_entity_images,
             merge_mode = not merge_mode,
           })
         end,
@@ -21657,6 +21735,7 @@ function AskGPT:_showRestoreOptionsDialog(backup_manager, backup, manifest, stat
             restore_configs = restore_configs,
             restore_content = restore_content,
             restore_chats = restore_chats,
+            restore_entity_images = restore_entity_images,
             merge_mode = merge_mode,
           }
 
@@ -23184,6 +23263,12 @@ function AskGPT:patchDocSettingsForChatIndex()
     -- association, delete drops it (images are kept, global-only), copy no-ops
     local ImageGenerator = require("koassistant_image_generator")
     ImageGenerator.updateIndexForMove(old_path, new_path, copy)
+
+    -- Entity portraits live outside generated X-Ray snapshots.  Keep the
+    -- book-local metadata scope aligned with KOReader's file move/delete
+    -- semantics; group-scoped portraits remain stable and managed image files
+    -- are never removed as a side effect of moving a book.
+    require("koassistant_entity_media").updateForMove(old_path, new_path, copy)
 
     -- Book groups (item 46): move re-keys memberships; copy never joins a
     -- group; delete keeps the entry (missing-file policy — manual remove only)

@@ -36,6 +36,24 @@ local _ = require("koassistant_gettext")
 
 local XrayCard = {}
 
+local function portraitPathForHit(hit, opts)
+    if not hit or not opts or opts.show_entity_portraits == false then return nil end
+    -- An ahead hit is intentionally not allowed to consult or display media
+    -- as part of the current-position card: the entry itself is future data.
+    if hit.source == "ahead" then return nil end
+    local file = opts.document_path
+    if type(file) ~= "string" or file == "" or type(hit.item) ~= "table" then return nil end
+    local ok, media = pcall(require, "koassistant_entity_media")
+    if not ok or not media then return nil end
+    local ok_resolved, resolved = pcall(media.resolve, file, hit.item, hit.category_key, {
+        features = opts.features,
+    })
+    if not ok_resolved or type(resolved) ~= "table" or resolved.ambiguous then return nil end
+    return resolved.path
+end
+
+XrayCard.portraitPathForHit = portraitPathForHit
+
 -- Terminator tokens that are abbreviations, not sentence ends (case-folded).
 local ABBREV = {
     mr = true, mrs = true, ms = true, dr = true, prof = true, sr = true, jr = true,
@@ -470,6 +488,7 @@ local function showPopupCard(hit, opts)
     -- Ahead hits: the NAME line leads with the triangle too (device round
     -- 2026-08-17 — the warning line alone sat below where the eye lands)
     local c = cardContent(hit, opts)
+    c.portrait_path = portraitPathForHit(hit, opts)
     local head = can_md and ("**" .. c.name .. "**") or c.name
     if c.warn then head = "\u{26A0} " .. head end
     if c.kind ~= "" then head = head .. " · " .. c.kind end
@@ -514,6 +533,14 @@ local function showFootnoteCard(hit, opts)
     -- Ahead hits: the NAME line leads with the triangle too (device round
     -- 2026-08-17); the warning line below stays
     local c = cardContent(hit, opts)
+    c.portrait_path = portraitPathForHit(hit, opts)
+    local portrait_html = ""
+    if c.portrait_path then
+        local src = c.portrait_path:gsub("&", "&amp;"):gsub('"', "&quot;")
+        src = "file://" .. src:gsub(" ", "%%20")
+        portrait_html = '<div class="koa-portrait"><img src="' .. src
+            .. '" alt="" /></div>'
+    end
     local html = "<div>" .. (c.warn and "\u{26A0} " or "") .. "<b>" .. esc(c.name) .. "</b>"
         .. (c.kind ~= "" and (" · " .. esc(c.kind)) or "") .. "</div>"
     if c.line then
@@ -524,13 +551,13 @@ local function showFootnoteCard(hit, opts)
     end
     -- Affordance: stock footnote panels do nothing on an inside tap, ours
     -- advances the card / opens the full entry — say so, muted
-    html = html .. '<div class="koa-meta">' .. esc(c.hint) .. "</div>"
+    html = portrait_html .. html .. '<div class="koa-meta">' .. esc(c.hint) .. "</div>"
 
     local ui = opts.ui
     local doc = ui and ui.document
     local params = {
         html = html,
-        css = ".koa-line { margin-top: 0.4em; } .koa-meta { margin-top: 0.5em; font-size: 80%; color: #555555; }",
+        css = ".koa-portrait { text-align: center; margin-bottom: 0.35em; } .koa-portrait img { max-width: 120px; max-height: 150px; } .koa-line { margin-top: 0.4em; } .koa-meta { margin-top: 0.5em; font-size: 80%; color: #555555; }",
         dialog = ui and ui.dialog,
         follow_callback = nil, -- set below (needs the popup upvalue)
     }
@@ -588,7 +615,11 @@ end
 --- full entry (router-owned).
 function XrayCard.show(hit, opts)
     opts = opts or {}
-    if opts.style == "popup" then
+    -- MinimalPopup is text-only on supported KOReader versions.  Keep its
+    -- compact geometry for text cards, but use the native footnote renderer
+    -- when a portrait exists so the image is actually visible rather than a
+    -- misleading placeholder.
+    if opts.style == "popup" and not portraitPathForHit(hit, opts) then
         return showPopupCard(hit, opts)
     end
     return showFootnoteCard(hit, opts)

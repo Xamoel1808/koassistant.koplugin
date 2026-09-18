@@ -56,6 +56,8 @@ local function listImages(book_file)
     return files
 end
 
+ImageBrowser.listImages = listImages
+
 local function viewImage(path, prompt)
     local ok, ImageViewer = pcall(require, "ui/widget/imageviewer")
     if not ok then return end
@@ -114,11 +116,21 @@ function ImageBrowser.show(opts)
             text = display,
             mandatory = string.format("%d KB", math.floor(f.size / 1024 + 0.5)),
             mandatory_dim = true,
-            callback = function() viewImage(f.path, full_prompt) end,
+            callback = function()
+                if opts and opts.select then
+                    UIManager:close(menu)
+                    if type(opts.on_select) == "function" then
+                        opts.on_select(f.path, f, full_prompt)
+                    end
+                else
+                    viewImage(f.path, full_prompt)
+                end
+            end,
             -- Hold = the full sent prompt, scrollable (InfoMessage truncated —
             -- device 2026-08-13), with Delete riding inside; pre-index images
             -- have no recorded prompt, so hold falls back to the delete confirm
             hold_callback = function()
+                if opts and opts.select then return end
                 if not full_prompt then
                     confirmDelete()
                     return
@@ -145,9 +157,13 @@ function ImageBrowser.show(opts)
     if book_file then
         local book_label = (opts and opts.book_title)
             or book_file:match("([^/]+)$") or book_file
-        title = T(_("Generated Images: %1 (%2)"), book_label, #files)
+        title = opts and opts.select
+            and T(_("Choose Generated Image: %1 (%2)"), book_label, #files)
+            or T(_("Generated Images: %1 (%2)"), book_label, #files)
     else
-        title = T(_("Generated Images (%1)"), #files)
+        title = opts and opts.select
+            and T(_("Choose Generated Image (%1)"), #files)
+            or T(_("Generated Images (%1)"), #files)
     end
 
     menu = Menu:new{
@@ -157,8 +173,8 @@ function ImageBrowser.show(opts)
         is_popout = false,
         width = Screen:getWidth(),
         height = Screen:getHeight(),
-        title_bar_left_icon = "appbar.menu",
-        onLeftButtonTap = function()
+        title_bar_left_icon = (opts and opts.select) and nil or "appbar.menu",
+        onLeftButtonTap = (opts and opts.select) and function() return true end or function()
             UIManager:show(ConfirmBox:new{
                 text = book_file and T(_("Delete all %1 images for this document?"), #files)
                     or T(_("Delete all %1 generated images?"), #files),

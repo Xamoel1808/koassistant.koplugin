@@ -2633,6 +2633,26 @@ function XrayBrowser:showItemDetail(item, category_key, title, source, nav_conte
         table.insert(buttons_rows, fallback_row)
     end
 
+    -- Persistent entity media is deliberately a separate row from X-Ray
+    -- editing.  It remains available even when the current item came from a
+    -- section/checkpoint snapshot: the association is snapshot-independent,
+    -- while AI generation below is gated to a spoiler-safe live view.
+    if self.metadata.book_file
+        and ((self.metadata.configuration or {}).features or {}).xray_entity_portraits_full ~= false then
+        local Media = require("koassistant_entity_media")
+        local portrait_state = Media.resolve(self.metadata.book_file, item, category_key, {
+            features = (self.metadata.configuration or {}).features or {},
+        })
+        local portrait_text = portrait_state.path and _("Portrait ✓") or _("Portrait…")
+        table.insert(buttons_rows, 1, {{
+            text = portrait_text,
+            callback = function()
+                self_ref:_showEntityPortraitPopup(item, category_key, title,
+                    source, nav_context, viewer)
+            end,
+        }})
+    end
+
     -- Resolve references into tappable cross-category navigation buttons
     if self.xray_data then
         -- Characters/key_figures: resolve connections (other characters/items)
@@ -3053,6 +3073,253 @@ end
 ---   highlights = the reader's matching annotations } — the READ rows. The
 ---   popup is built before the connection block fills its list, so these are
 ---   closures over locals that are populated by the time a callback runs.
+--- Open an attached portrait in KOReader's native image viewer.
+function XrayBrowser:_viewEntityPortrait(path)
+    if type(path) ~= "string" or path == "" then return end
+    local ok, ImageViewer = pcall(require, "ui/widget/imageviewer")
+    if not ok or not ImageViewer then
+        UIManager:show(InfoMessage:new{ text = T(_("Portrait file:\n%1"), path), timeout = 4 })
+        return
+    end
+    UIManager:show(ImageViewer:new{
+        file = path,
+        with_title_bar = true,
+        title_text = _("Entity portrait"),
+        is_doc_page = false,
+    })
+end
+
+local function portraitGenerationProvider(features, main_provider, settings)
+    local ok, generator = pcall(require, "koassistant_image_generator")
+    if not ok or not generator then return nil, "unavailable" end
+    return generator.effectiveProvider(features or {}, main_provider, settings)
+end
+
+--- AI generation is deliberately narrower than the display/attachment path:
+--- only a live, position-safe X-Ray item can be sent to a provider. Section,
+--- checkpoint and upcoming entries may still use local/gallery attachment.
+function XrayBrowser:_portraitGenerationAllowed(item, category_key)
+    if self.scope or self.metadata.checkpoint then
+        return false, _("Generate a portrait from the current reading-position X-Ray, not a section or checkpoint view.")
+    end
+    if not self.metadata.book_file then
+        return false, _("Portrait generation requires an open book.")
+    end
+    local features = (self.metadata.configuration or {}).features or {}
+    local plugin = self.metadata.plugin
+    local settings = plugin and plugin.settings
+    local provider, reason = portraitGenerationProvider(features, self.metadata.configuration.provider, settings)
+    if not provider then
+        if reason == "not_connected" then
+            return false, _("OpenAI Subscription is not connected. Connect it in KOAssistant settings, or choose an API-backed image provider.")
+        end
+        return false, _("No configured image-generation provider is available.")
+    end
+    -- Reuse the X-Ray text-sharing gate. X-Ray descriptions are text-derived
+    -- artifacts, so a provider that is not trusted and has no explicit text
+    -- consent must not receive them just because this is an image request.
+    local ok_consent, consent = pcall(require("koassistant_xray_merge").consentOk,
+        { { used_book_text = true } }, features, provider, self.metadata.book_file, self.ui)
+    if not ok_consent or not consent then
+        return false, _("Portrait generation is blocked by KOAssistant's book-text privacy setting. Enable text sharing for this provider or mark it trusted first.")
+    end
+    -- If the installed artifact was built past the reader's current page, its
+    -- descriptions can contain future details. Refuse to guess which clauses
+    -- are safe; a current-position X-Ray update is the honest remedy.
+    local gate = self:_spoilerGate()
+    if gate then
+        local total = self.ui and self.ui.document and self.ui.document.info
+            and self.ui.document.info.number_of_pages
+        local current
+        if self.ui and self.ui.document then
+            local ok_page, page = pcall(getCurrentPage, self.ui)
+            if ok_page then current = page end
+        end
+        local coverage = total and tonumber(self.metadata.progress_decimal)
+            and math.floor(self.metadata.progress_decimal * total + 0.5)
+        if not coverage or not current or coverage > current then
+            return false, _("This X-Ray contains information ahead of your reading position. Generate a portrait after installing a position-safe X-Ray update, so future appearance details are not sent to the provider.")
+        end
+    end
+    return true, provider
+end
+
+local function reopenPortraitEntity(self_ref, item, category_key, title, source, nav_context, viewer)
+    self_ref:_dismissDetail(viewer)
+    self_ref:showItemDetail(item, category_key, title, source, nav_context)
+end
+
+--- Portrait actions shared by the full entity view. Local and gallery
+--- attachments work without any image provider; generation is explicit and
+--- uses the existing ImageGenerator + OAuth/API transports.
+function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source, nav_context, viewer)
+    local Media = require("koassistant_entity_media")
+    local features = (self.metadata.configuration or {}).features or {}
+    local file = self.metadata.book_file
+    local state = Media.resolve(file, item, category_key, { features = features })
+    local ImageBrowser = require("koassistant_image_browser")
+    local self_ref = self
+    local dialog
+    local function notify(text, timeout)
+        UIManager:show(InfoMessage:new{ text = text, timeout = timeout or 4 })
+    end
+    local function refresh()
+        reopenPortraitEntity(self_ref, item, category_key, title, source, nav_context, viewer)
+    end
+    local function attach(path, source_kind, replace)
+        local ok, result = Media.attachLocal(file, item, category_key, path, {
+            source = source_kind,
+            replace = replace == true,
+            allow_ambiguous = state.ambiguous == true,
+            features = features,
+        })
+        if not ok then
+            notify(tostring(result or _("Could not attach that image.")))
+            return
+        end
+        refresh()
+    end
+    local function chooseLocal()
+        local PathChooser = require("ui/widget/pathchooser")
+        local start_path = G_reader_settings:readSetting("home_dir")
+            or Device.home_dir or "/mnt/us"
+        local chooser
+        chooser = PathChooser:new{
+            title = state.ambiguous and _("Choose a book-local entity portrait")
+                or (state.path and _("Replace entity portrait") or _("Choose entity portrait")),
+            path = start_path,
+            select_directory = false,
+            select_file = true,
+            file_filter = function(filename)
+                local lower = tostring(filename or ""):lower()
+                return lower:match("%.png$") ~= nil
+                    or lower:match("%.jpe?g$") ~= nil
+            end,
+            onConfirm = function(selected_path)
+                UIManager:close(chooser)
+                attach(selected_path, "manual", state.record ~= nil)
+            end,
+        }
+        UIManager:show(chooser)
+    end
+    local function chooseGallery()
+        UIManager:close(dialog)
+        ImageBrowser.show{
+            book_file = file,
+            book_title = self_ref.metadata.title,
+            select = true,
+            on_select = function(path)
+                attach(path, "gallery", state.record ~= nil)
+            end,
+        }
+    end
+    local function startGeneration(provider)
+        local ImageGenerator = require("koassistant_image_generator")
+        local prompt = Media.buildPortraitPrompt(item, category_key, {
+            title = self_ref.metadata.title,
+            author = self_ref.metadata.book_author,
+        }, {
+            style = features.image_gen_portrait_style or "auto",
+            custom_instruction = features.image_gen_portrait_instruction,
+        })
+        local plugin = self_ref.metadata.plugin
+        local config = self_ref.metadata.configuration or {}
+        local book_info = { file = file, title = self_ref.metadata.title }
+        ImageGenerator.generate(XrayParser.getItemName(item, category_key), config,
+            plugin and plugin.settings, book_info, {
+                portrait_prompt = prompt,
+                show_viewer = false,
+                on_image_saved = function(path)
+                    local ok, err = Media.attachGenerated(file, item, category_key, path, {
+                        provider = provider,
+                        model = ImageGenerator.resolveImageModel(provider,
+                            config.features or {}) or config.model,
+                        prompt = prompt,
+                    }, {
+                        replace = state.record ~= nil,
+                        allow_ambiguous = state.ambiguous == true,
+                        features = features,
+                    })
+                    if not ok then
+                        notify(tostring(err or _("Generated image was saved, but could not be attached as the portrait.")))
+                        return
+                    end
+                    UIManager:nextTick(refresh)
+                end,
+            })
+    end
+    local function generate()
+        UIManager:close(dialog)
+        local allowed, provider_or_error = self_ref:_portraitGenerationAllowed(item, category_key)
+        if not allowed then
+            notify(provider_or_error)
+            return
+        end
+        if not Media.hasKnownAppearance(item) then
+            UIManager:show(require("ui/widget/confirmbox"):new{
+                text = _("The current spoiler-safe X-Ray does not contain a physical appearance description. Generate a deliberately non-specific portrait anyway?"),
+                ok_text = _("Generate generic portrait"),
+                ok_callback = function() startGeneration(provider_or_error) end,
+            })
+            return
+        end
+        startGeneration(provider_or_error)
+    end
+    local function remove()
+        UIManager:close(dialog)
+        UIManager:show(require("ui/widget/confirmbox"):new{
+            text = state.record
+                and _("Remove the portrait association? The managed image will be kept on disk for safe recovery.")
+                or _("No portrait is attached."),
+            ok_text = _("Remove"),
+            ok_callback = function()
+                local ok, err = Media.removePortrait(file, item, category_key)
+                if not ok then notify(tostring(err or _("Portrait removal failed."))) else refresh() end
+            end,
+        })
+    end
+    local buttons = {}
+    if state.ambiguous then
+        buttons[#buttons + 1] = {{
+            text = _("Several portraits match; new choices stay book-local"),
+            enabled = false,
+        }}
+    end
+    local has_association = state.record ~= nil
+    if has_association then
+        buttons[#buttons + 1] = {{ text = _("View portrait"), callback = function()
+            UIManager:close(dialog)
+            if state.path then
+                self_ref:_viewEntityPortrait(state.path)
+            else
+                notify(_("The managed portrait file is missing. Choose Replace to attach it again."))
+            end
+        end }}
+        buttons[#buttons + 1] = {{ text = state.path and _("Replace with local image…")
+            or _("Restore missing local image…"), callback = function()
+            UIManager:close(dialog); chooseLocal()
+        end }}
+        buttons[#buttons + 1] = {{ text = _("Generate replacement…"), callback = generate }}
+        buttons[#buttons + 1] = {{ text = _("Use generated image…"), callback = chooseGallery }}
+        buttons[#buttons + 1] = {{ text = _("Remove portrait"), callback = remove }}
+    else
+        buttons[#buttons + 1] = {{ text = _("Choose local image…"), callback = function()
+            UIManager:close(dialog); chooseLocal()
+        end }}
+        buttons[#buttons + 1] = {{ text = _("Generate portrait"), callback = generate }}
+        buttons[#buttons + 1] = {{ text = _("Use generated image…"), callback = chooseGallery }}
+    end
+    buttons[#buttons + 1] = {{ text = _("Cancel"), callback = function() UIManager:close(dialog) end }}
+    dialog = ButtonDialog:new{
+        title = state.ambiguous and _("Portrait — ambiguous identity")
+            or (state.path and _("Portrait")
+                or (has_association and _("Portrait — file missing")
+                    or _("Portrait — none attached"))),
+        buttons = buttons,
+    }
+    UIManager:show(dialog)
+end
+
 function XrayBrowser:_showEntityManagePopup(item, category_key, title, source, nav_context, viewer, can_edit_terms, view_payload)
     local ButtonDialog = require("ui/widget/buttondialog")
     local self_ref = self
@@ -3398,6 +3665,11 @@ function XrayBrowser:_commitLink(member_file, member_title, entry, parsed,
             timeout = 4 })
         return
     end
+    -- Keep persistent media identity handles in step with the alias bridge;
+    -- the media store is intentionally independent of the rewritten X-Ray
+    -- snapshots.
+    pcall(require("koassistant_entity_media").renameEntity, member_file,
+        { name = r_name, aliases = our_names }, r_cat, nil)
     self:_dismissDetail(viewer)
     if self:_commitDormantOp(
         function(data)
@@ -3488,6 +3760,8 @@ function XrayBrowser:_commitRename(category_key, old_name, new_name, viewer)
     end
     local ActionCache = require("koassistant_action_cache")
     ActionCache.renameEntityKeys(book_file, category_key, old_name, new_name)
+    pcall(require("koassistant_entity_media").renameEntity, book_file,
+        { name = new_name, aliases = { old_name } }, category_key, old_name)
     -- STAY IN PLACE (maintainer 2026-08-09, replacing the unwind-to-root):
     -- rebuild the path to the renamed detail synchronously, so no page in the
     -- fresh stack holds pre-rename item tables

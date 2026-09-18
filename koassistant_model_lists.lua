@@ -892,6 +892,16 @@ ModelLists._image_models = {
         "gemini-3.1-flash-image",  -- "Nano Banana" (default)
         "gemini-3-pro-image",
     },
+    -- ChatGPT/Codex subscription image generation uses the Responses
+    -- image_generation tool on a subscribed Codex model, not the public
+    -- /v1/images/generations endpoint.  Keep this list separate so the image
+    -- picker never suggests a gpt-image model to the Codex backend.
+    openai_codex = {
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+    },
 }
 
 -------------------------------------------------------------------------------

@@ -9,6 +9,7 @@ Currently supported providers and their image-generation endpoints:
   • openai     → https://api.openai.com/v1/images/generations   (gpt-image family)
   • xai        → https://api.x.ai/v1/images/generations         (grok-imagine-image)
   • gemini     → generateContent with IMAGE modality             (gemini-*-image)
+  • openai_codex → ChatGPT/Codex Responses image_generation tool (OAuth)
 
 Model inventory lives in koassistant_model_lists.lua (`_image_models`);
 this file holds only wire/endpoint facts. Generated images are kept in
@@ -72,6 +73,12 @@ local IMAGE_ENDPOINTS = {
         key_header = "x-goog-api-key",
         is_gemini  = true,
     },
+    -- Transport details are implemented below through the existing
+    -- koassistant_api.openai_codex OAuth-backed handler.  There is no API key
+    -- for this provider.
+    openai_codex = {
+        is_codex = true,
+    },
 }
 
 -- ---------------------------------------------------------------------------
@@ -104,6 +111,13 @@ function ImageGenerator.effectiveProvider(features, main_provider, settings)
     if not provider or not IMAGE_ENDPOINTS[provider] then
         return nil, "no_endpoint"
     end
+    if provider == "openai_codex" then
+        local ok, oauth = pcall(require, "koassistant_openai_codex_oauth")
+        if not ok or not oauth.isConfigured(settings) then
+            return nil, "not_connected"
+        end
+        return provider
+    end
     if not resolveApiKey(provider, settings) then
         return nil, "no_key"
     end
@@ -118,6 +132,8 @@ local function resolveImageModel(provider, features)
     end
     return ModelLists.getDefaultImageModel(provider)
 end
+
+ImageGenerator.resolveImageModel = resolveImageModel
 
 --- Show a simple error / informational notice.
 local function showNotice(text)
@@ -281,7 +297,7 @@ end
 --- full_prompt (optional): the exact prompt sent to the API (context-framed);
 --- recorded in the index so the gallery's "Show full prompt" shows the truth.
 --- `description` stays the raw selection — it drives filename + viewer title.
-local function showImage(image_data, description, on_close, book_info, full_prompt)
+local function showImage(image_data, description, on_close, book_info, full_prompt, save_opts)
     local UIManager  = require("ui/uimanager")
     local lfs = require("libs/libkoreader-lfs")
 
@@ -306,6 +322,22 @@ local function showImage(image_data, description, on_close, book_info, full_prom
     f:write(image_data)
     f:close()
     ImageGenerator.recordImage(path:match("([^/]+)$"), book_info, full_prompt or description)
+
+    if save_opts and type(save_opts.on_saved) == "function" then
+        local ok_saved, saved_err = pcall(save_opts.on_saved, path, {
+            description = description,
+            prompt = full_prompt or description,
+            book_info = book_info,
+        })
+        if not ok_saved then
+            logger.err("KOAssistant: image save callback failed:", tostring(saved_err))
+        end
+    end
+
+    if save_opts and save_opts.show_viewer == false then
+        if on_close then on_close() end
+        return path
+    end
 
     -- Try to load KOReader's ImageViewer
     local ok, ImageViewer = pcall(require, "ui/widget/imageviewer")
@@ -352,6 +384,14 @@ local function showImage(image_data, description, on_close, book_info, full_prom
         end
     end
     UIManager:show(viewer)
+    return path
+end
+
+-- Public save/view hook used by entity portraits and tests.  It intentionally
+-- keeps the normal gallery index behavior and never puts image bytes into an
+-- X-Ray JSON object.
+function ImageGenerator.saveImage(image_data, description, book_info, full_prompt, opts)
+    return showImage(image_data, description, nil, book_info, full_prompt, opts)
 end
 
 -- ---------------------------------------------------------------------------
@@ -552,6 +592,281 @@ function ImageGenerator.promptTemplateText(features)
     }, features)
 end
 
+-- ---------------------------------------------------------------------------
+-- ChatGPT/Codex subscription image generation
+-- ---------------------------------------------------------------------------
+
+function ImageGenerator.buildCodexImageRequest(prompt, model)
+    return require("koassistant_api.openai_codex").buildImageRequest(prompt, model)
+end
+
+function ImageGenerator.buildCodexImageHeaders(auth)
+    return require("koassistant_api.openai_codex").buildImageHeaders(auth)
+end
+
+local function firstErrorText(value)
+    if type(value) == "table" then
+        return str(value.message) or str(value.code) or str(value.type)
+    end
+    if type(value) == "string" then return value end
+    return nil
+end
+
+local function decodeImageBase64(value)
+    if type(value) ~= "string" or value == "" then return nil end
+    value = value:gsub("^data:[^;]+;base64,", "")
+    local ok, decoded = pcall(mime.unb64, value)
+    if ok and type(decoded) == "string" and decoded ~= "" then return decoded end
+    return nil
+end
+
+-- Extract the image-generation result from the several Responses event shapes
+-- used by the public API and the ChatGPT Codex backend.  The parser consumes
+-- only decoded SSE data and never logs it (image payloads and prompts can be
+-- large/sensitive).
+function ImageGenerator.parseCodexImageSSE(body)
+    if type(body) ~= "string" or body == "" then return nil, "empty SSE response" end
+    local image, revised_prompt, response_model
+    local terminal_status
+    local failure
+    local decoded_events, malformed = 0, 0
+
+    local function collect(node, image_context, seen)
+        if image then return end
+        if type(node) == "string" then
+            if image_context then image = decodeImageBase64(node) end
+            return
+        end
+        if type(node) ~= "table" then return end
+        seen = seen or {}
+        if seen[node] then return end
+        seen[node] = true
+        local node_type = type(node.type) == "string" and node.type:lower() or ""
+        local is_image = image_context or node_type:find("image", 1, true) ~= nil
+
+        for _, key in ipairs({ "b64_json", "image_base64", "base64" }) do
+            if type(node[key]) == "string" then
+                image = decodeImageBase64(node[key])
+                if image then break end
+            end
+        end
+        if not image and is_image then
+            for _, key in ipairs({ "result", "data", "image", "output" }) do
+                if type(node[key]) == "string" then
+                    image = decodeImageBase64(node[key])
+                    if image then break end
+                end
+            end
+        end
+        revised_prompt = revised_prompt or str(node.revised_prompt)
+            or str(node.revisedPrompt)
+        response_model = response_model or str(node.model)
+        if image then return end
+
+        -- Only walk protocol containers.  In particular, do not recursively
+        -- inspect arbitrary message text and accidentally treat a prompt as
+        -- an image payload.
+        for _, key in ipairs({ "item", "output", "response", "result", "image_generation_call", "image_gen_call" }) do
+            local child = node[key]
+            if type(child) == "table" then
+                if #child > 0 then
+                    for _, value in ipairs(child) do collect(value, is_image, seen) end
+                else
+                    collect(child, is_image, seen)
+                end
+            elseif type(child) == "string" and is_image then
+                image = decodeImageBase64(child)
+            end
+            if image then return end
+        end
+    end
+
+    local function processEventData(data)
+        if not data or data == "" or data == "[DONE]" then return end
+        local ok, event = pcall(json.decode, data)
+        if ok and type(event) == "table" then
+            decoded_events = decoded_events + 1
+            local event_type = type(event.type) == "string" and event.type:lower() or ""
+            if event_type == "response.failed" or event_type == "error"
+                or event_type == "response.image_generation.failed" then
+                failure = firstErrorText(event.error) or firstErrorText(event.response)
+                    or "image generation request failed"
+                terminal_status = "failed"
+            elseif event_type == "response.completed"
+                or event_type == "response.incomplete" then
+                local response = type(event.response) == "table" and event.response or event
+                terminal_status = response.status or event_type:match("response%.(%w+)")
+                response_model = response_model or str(response.model)
+                if type(response.output) == "table" then
+                    for _, item in ipairs(response.output) do collect(item, false) end
+                end
+                revised_prompt = revised_prompt or str(response.revised_prompt)
+            elseif event_type == "response.output_item.done"
+                or event_type == "response.image_generation_call.completed"
+                or event_type == "response.image_gen_call.completed"
+                or event_type == "image_generation.completed" then
+                collect(event, true)
+            elseif event_type:find("image_generation", 1, true)
+                or event_type:find("image_gen", 1, true) then
+                collect(event, true)
+            end
+        else
+            malformed = malformed + 1
+        end
+    end
+
+    -- SSE permits an event payload to be split across multiple `data:` lines;
+    -- join a block before decoding instead of treating each fragment as a
+    -- malformed response.  Comment/event lines are intentionally ignored.
+    local data_lines = {}
+    local function flushData()
+        if #data_lines > 0 then
+            processEventData(table.concat(data_lines, "\n"))
+            data_lines = {}
+        end
+    end
+    for raw_line in (body .. "\n"):gmatch("([^\n]*)\n") do
+        local line = raw_line:gsub("\r$", "")
+        local data = line:match("^data:%s?(.*)$")
+        if data ~= nil then
+            data_lines[#data_lines + 1] = data
+        elseif line == "" then
+            flushData()
+        end
+    end
+    flushData()
+
+    if failure then return nil, failure end
+    if image then
+        return {
+            image_data = image,
+            revised_prompt = revised_prompt,
+            model = response_model,
+            status = terminal_status or "completed",
+        }
+    end
+    if decoded_events == 0 and malformed > 0 then return nil, "malformed SSE response" end
+    return nil, terminal_status == "failed" and "image generation failed"
+        or "no image data in Codex response"
+end
+
+function ImageGenerator.codexErrorForStatus(status_code)
+    status_code = tonumber(status_code)
+    if status_code == 401 then return "OpenAI Subscription authorization expired. Reconnect your ChatGPT account." end
+    if status_code == 403 then return "OpenAI Subscription image generation is not permitted for this account or model." end
+    if status_code == 429 then return "OpenAI Subscription image-generation usage limit reached. Try again later." end
+    return T(_("OpenAI Subscription image generation failed (HTTP %1)."), tostring(status_code or "?"))
+end
+
+local function makeCodexBackgroundFn(auth, request_body)
+    local handler = require("koassistant_api.openai_codex")
+    local url = handler.getEndpoint()
+    local resolved_ip = BaseHandler.resolveForSubprocess(url)
+    local body = json.encode(request_body)
+    local headers = ImageGenerator.buildCodexImageHeaders(auth)
+    headers["Content-Length"] = tostring(#body)
+    return makePipeFetchFn(function()
+        return BaseHandler.fetchInSubprocess(url, {
+            method = "POST",
+            headers = headers,
+            body = body,
+            resolved_ip = resolved_ip,
+            timeout = 180,
+        })
+    end, "Codex image subprocess error: ")
+end
+
+function ImageGenerator._generateCodexImpl(description, config_table, settings, book_info, opts)
+    local UIManager = require("ui/uimanager")
+    local OAuth = require("koassistant_openai_codex_oauth")
+    local features = (config_table and config_table.features) or {}
+    local model = (features.image_gen_model_openai_codex
+        and features.image_gen_model_openai_codex ~= "default")
+        and features.image_gen_model_openai_codex
+        or resolveImageModel("openai_codex", features)
+        or "gpt-5.6-terra"
+    local prompt = opts and opts.portrait_prompt or ImageGenerator.buildPrompt(description, opts, features)
+
+    local function start(auth)
+        if not auth or not auth.access_token or not auth.chatgpt_account_id then
+            showNotice(_("OpenAI Subscription is not connected. Connect it in KOAssistant settings."))
+            return
+        end
+        local StreamHandler = require("stream_handler")
+        local cancelled, active_pid = false, nil
+        local status
+        local function closeStatus()
+            if status then status.close(); status = nil end
+        end
+        local function cancel()
+            cancelled = true
+            if active_pid then ffiutil.terminateSubProcess(active_pid) end
+            closeStatus()
+        end
+        status = StreamHandler.showToolStatusDialog({
+            settings = { large_stream_dialog = false, response_font_size = features.markdown_font_size },
+            title = _("Generating portrait"),
+            initial_text = T(_("Generating image with OpenAI Subscription / %1…"), model),
+            on_stop = cancel,
+        })
+        local request = ImageGenerator.buildCodexImageRequest(prompt, model)
+        local pid, read_fd = ffiutil.runInSubProcess(makeCodexBackgroundFn(auth, request), true)
+        if not pid then
+            closeStatus()
+            showNotice(_("Failed to start OpenAI Subscription image generation."))
+            return
+        end
+        active_pid = pid
+        local function done(raw)
+            closeStatus()
+            if cancelled then return end
+            if not raw or raw == "" then
+                showNotice(_("Empty response from OpenAI Subscription image generation."))
+                return
+            end
+            if raw:sub(1, 4) == "ERR:" then
+                local message = raw:sub(5)
+                local code = message:match("HTTP%s+(%d+)")
+                -- Do not surface the raw backend body: OAuth/error responses
+                -- can contain account metadata, and this path must never turn
+                -- an authentication header or token into user-visible/logged
+                -- diagnostic text.
+                showNotice(code and ImageGenerator.codexErrorForStatus(code)
+                    or _("OpenAI Subscription image generation failed. Check the connection and try again."))
+                return
+            end
+            if raw:sub(1, 3) ~= "OK:" then
+                showNotice(_("Malformed response from OpenAI Subscription image generation."))
+                return
+            end
+            local parsed, err = ImageGenerator.parseCodexImageSSE(raw:sub(4))
+            if not parsed then
+                showNotice(T(_("OpenAI Subscription image generation failed:\n\n%1"), tostring(err)))
+                return
+            end
+            showImage(parsed.image_data, description, nil, book_info,
+                parsed.revised_prompt or prompt,
+                opts and { on_saved = opts.on_image_saved, show_viewer = opts.show_viewer } or nil)
+        end
+        pollSubprocess(pid, read_fd, function(raw)
+            local ok, err = pcall(done, raw)
+            if not ok then
+                closeStatus()
+                logger.err("KOAssistant: Codex image callback failed:", tostring(err))
+                showNotice(_("OpenAI Subscription image generation failed."))
+            end
+        end)
+    end
+
+    OAuth.resolveAccessTokenAsync(settings, function(auth, err)
+        if not auth then
+            showNotice(tostring(err or _("OpenAI Subscription is not connected.")))
+            return
+        end
+        start(auth)
+    end)
+end
+
 function ImageGenerator.generate(word, config_table, settings, book_info, opts)
     local ok, err = pcall(function()
         ImageGenerator._generateImpl(word, config_table, settings, book_info, opts)
@@ -579,13 +894,14 @@ function ImageGenerator._generateImpl(word, config_table, settings, book_info, o
     if not provider then
         if unavailable == "no_key" then
             showNotice(_("No API key found for the image generation provider.\n\nPlease add your key in KOAssistant settings."))
+        elseif unavailable == "not_connected" then
+            showNotice(_("OpenAI Subscription is not connected. Connect it in KOAssistant settings before generating an image."))
         else
-            showNotice(_("Image generation is not available for the current provider.\n\nSupported: OpenAI, xAI (Grok), Gemini. You can also pick a dedicated image provider in KOAssistant settings (Advanced)."))
+            showNotice(_("Image generation is not available for the current provider.\n\nSupported: OpenAI, xAI (Grok), Gemini, and OpenAI Subscription (ChatGPT/Codex). You can also pick a dedicated image provider in KOAssistant settings (Advanced)."))
         end
         return
     end
     local endpoint = IMAGE_ENDPOINTS[provider]
-    local api_key = resolveApiKey(provider, settings)
     local resolved_model = resolveImageModel(provider, features)
 
     -- Trim and validate description
@@ -595,11 +911,19 @@ function ImageGenerator._generateImpl(word, config_table, settings, book_info, o
         return
     end
 
+    if provider == "openai_codex" then
+        return ImageGenerator._generateCodexImpl(description, config_table, settings, book_info, opts)
+    end
+
+    local api_key = resolveApiKey(provider, settings)
+
     -- Context-framed prompt (device 2026-08-13 "more context"): book identity +
     -- a trimmed slice of the surrounding passage, framed as context so the
     -- model illustrates the SELECTION, not the frame. The FULL prompt is what
     -- gets sent and recorded (viewable via the gallery + viewer caption).
-    local final_prompt = ImageGenerator.buildPrompt(description, opts, features)
+    local final_prompt = (opts and type(opts.portrait_prompt) == "string"
+        and opts.portrait_prompt ~= "" and opts.portrait_prompt)
+        or ImageGenerator.buildPrompt(description, opts, features)
 
     -- Build request JSON (provider-specific format)
     local request_body_str
@@ -794,7 +1118,8 @@ function ImageGenerator._generateImpl(word, config_table, settings, book_info, o
                             return
                         end
                         status.close()
-                        showImage(image_bytes, description, nil, book_info, final_prompt)
+                        showImage(image_bytes, description, nil, book_info, final_prompt,
+                            opts and { on_saved = opts.on_image_saved, show_viewer = opts.show_viewer } or nil)
                         return
                     end
                 end
@@ -820,7 +1145,8 @@ function ImageGenerator._generateImpl(word, config_table, settings, book_info, o
                 return
             end
             status.close()
-            showImage(image_bytes, description, nil, book_info, final_prompt)
+            showImage(image_bytes, description, nil, book_info, final_prompt,
+                opts and { on_saved = opts.on_image_saved, show_viewer = opts.show_viewer } or nil)
             return
         end
 
@@ -855,7 +1181,8 @@ function ImageGenerator._generateImpl(word, config_table, settings, book_info, o
             end
             -- "OK:" prefix + binary
             status.close()
-            showImage(dl_raw:sub(4), description, nil, book_info, final_prompt)
+            showImage(dl_raw:sub(4), description, nil, book_info, final_prompt,
+                opts and { on_saved = opts.on_image_saved, show_viewer = opts.show_viewer } or nil)
         end))
     end))
 end

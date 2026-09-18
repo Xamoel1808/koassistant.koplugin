@@ -68,6 +68,7 @@ This plugin is developed with AI assistance using (mostly) [Claude Code](https:/
   - [Spoiler Protection](#spoiler-protection): Prevent AI from revealing events beyond your reading position (on by default)
   - [Save to Note](#save-to-note)
 - [Image Generation](#image-generation): Turn a highlight into an image
+- [Entity Portraits](#entity-portraits): Persistent X-Ray portraits for characters and other entities
 - [How the AI Prompt Works](#how-the-ai-prompt-works): Behavior + Domain + Language system
 - [Actions](#actions)
   - [Managing Actions](#managing-actions)
@@ -668,7 +669,7 @@ You can customize these, create your own, or disable ones you don't use. See [Ac
 | **Deep Analysis** | Linguistic deep-dive: morphology, word family, cognates, etymology path |
 | **Look up in X-Ray** | `[Local]` Instant search of cached X-Ray data for selected text, no AI call, works offline. Searches by name and alias across all X-Rays (main + sections). An exact name or alias match opens that entry directly (or a compact [entity card](#reading-analysis-actions) first); several entries sharing the same name give a short chooser; partial matches open a results list grouped by X-Ray. Available in highlight menu and dictionary popup. Only appears when the book has an X-Ray cache. |
 
-**Generate Image**: A separate **Generate Image (KOA)** button in the highlight popup turns the selected text into an image via an image-generation provider (OpenAI, xAI, or Gemini). It uses its own provider/model and settings (independent of your chat provider) and appears only when image generation is enabled and the effective provider supports it. Generated images are kept on device in `data_dir/koassistant_images` and collected in a **Generated Images** gallery (tap to view, hold to delete, or delete all), with a per-book association so each book's images also appear on its "View Artifacts" list and in the cross-book artifact browser. You control whether (and where) the button appears from the Highlight Menu manager, like any other highlight action. See [Image Generation](#image-generation) for details.
+**Generate Image**: A separate **Generate Image (KOA)** button in the highlight popup turns the selected text into an image via an image-generation provider (OpenAI, xAI, Gemini, or the experimental OpenAI Subscription/Codex transport). It uses its own provider/model and settings (independent of your chat provider) and appears only when image generation is enabled and the effective provider supports it. Generated images are kept on device in `data_dir/koassistant_images` and collected in a **Generated Images** gallery (tap to view, hold to delete, or delete all), with a per-book association so each book's images also appear on its "View Artifacts" list and in the cross-book artifact browser. You control whether (and where) the button appears from the Highlight Menu manager, like any other highlight action. See [Image Generation](#image-generation) for details.
 
 **Source selection:**
 
@@ -870,6 +871,19 @@ The X-Ray action produces a structured JSON analysis that opens in a **browsable
 - **Passive marking**: words on the page that match an X-Ray entity's name or alias get a discreet dotted gray underline as you read (EPUB page mode; drawn shortly after the page settles, entirely on device). Tap a marked word to open its entry. Density is configurable (every occurrence, once per page, only after 10 or 25 unseen pages, or once per book; default: after 10 unseen pages), as is which categories are marked (everything, people only, or people + places). In a [Book Group](#book-groups) the marks also cover names from this book's carried list and from the group's other X-Rays the spoiler chain allows; they are drawn the same dotted way, since that content is already behind you.
 - **Entity cards**: an exact hit opens a compact card first: name, category and role, plus a one-line identification, with the full entry one tap away. The card can be a footnote panel at the bottom of the screen or a small popup anchored at the tapped word. Turn the card off to open the full entry directly. For an entity already in your installed X-Ray the card shows its first sentence by default (a setting can make it show the whole entry). For one known only from the checkpoint ahead of you, the card starts with just the name and category; a tap adds the one-line description, and another tap opens the full entry behind a spoiler confirmation. Both are configurable globally and per book. A hit that other books in the group also know carries an **"Also in *Title*'s X-Ray"** line.
 - **Matching selections**: selecting text or dictionary-looking-up a word that exactly matches an entity's name or alias opens its entry instead of the dictionary. Anything that doesn't match falls through to your normal dictionary or highlight menu, and a very long press always gets you the plain menus. Entities that first appear beyond your installed coverage (recognized from the next checkpoint built past your reading position, never a later one) mark as short dashes and identify with a spoiler warning; their full entry stays behind a confirmation. Turn the "Upcoming entities" peek off (globally or per book) to keep marking and lookup strictly at your installed coverage.
+
+### Entity Portraits
+
+Entity Portraits attach persistent media to X-Ray entities. They are optional and are not part of the generated X-Ray JSON, so they survive X-Ray regeneration, Automatic X-Ray updates, Section X-Rays, checkpoint switching, and version restore. Tap a marked name to see the compact card; when a portrait is available, the card shows a small thumbnail. In the full entity view, the **Portrait** row lets you view, replace, or remove it.
+
+- **Choose local image** copies a PNG, JPG, or JPEG from normal Kindle-accessible storage (including `/mnt/us`) into KOAssistant's managed media directory. The source file is never moved or modified. WebP is intentionally not accepted unless KOReader's image support becomes reliable across supported devices.
+- **Use generated image** opens the existing per-book Generated Images gallery. The selected image is copied into portrait storage, so deleting the gallery image later does not break the portrait.
+- **Generate portrait** is always an explicit action. It uses the current spoiler-safe X-Ray entity entry, known aliases, and known appearance/context only; it never reads a future checkpoint or later volume. If no appearance is known, KOAssistant asks before making a deliberately non-specific portrait. A small style picker supports Auto, anime/light-novel, illustrated, semi-realistic, and photorealistic, plus an optional custom instruction. Generation also passes through the normal trusted-provider/text-sharing privacy gate.
+- **Book Group inheritance** reuses a portrait only when the existing spoiler-aware group X-Ray matching finds a strong identity. Canonical names and aliases are retained as handles, short/common names alone are not enough, and ambiguous matches are left unassigned. A book-local manual portrait overrides an inherited group portrait; removing the local association reveals the inherited one again. Removing an inherited portrait hides it only in the current book so another volume does not lose its shared image. Conflicting manual portraits are retained rather than silently deleted.
+
+Portrait records and relative file references live under `data_dir/koassistant_entity_media/`: the small `koassistant_entity_media.lua` index contains metadata, while image bytes live below `images/<scope>/<entity>/portrait.<ext>`. The store uses book/group scopes and is updated when KOAssistant's existing book-move hooks move a document. Removing a portrait removes the association; it keeps the managed file for recovery unless an explicit future cleanup action can prove it is unreferenced.
+
+For backups, portrait metadata is included with settings when settings are selected. Image binaries are **metadata-only by default**; choose **Include entity portrait images** in the backup/restore options when you want the managed files copied as well. This keeps ordinary backups small. The files are private book-derived assets: generating one may send the current entity description to the selected external provider. OpenAI Subscription (ChatGPT/Codex) is marked experimental/unofficial, uses KOAssistant's existing OAuth/account connection, requests no API key, and does not automate or scrape the ChatGPT website. If a portrait disappears after restoring metadata-only backup, restore the matching entity-media image directory or attach the source/generated image again.
 
 > **Model selection for X-Ray:** X-Ray generates detailed structured JSON (for the X-Ray browser to work) that can be large (10K-30K+ tokens of output), and it is a complex task for the AI. The action requests up to 64K output tokens to avoid truncation. Weaker models can struggle to follow these instructions, and even if they manage it, will produce low quality content for the actual analysis, and models with low output caps (e.g., some Groq models at 8K) will produce shorter, potentially truncated results, so use larger models with higher output limits for best results. If you find a model that produces great X-Rays, you can lock it in for this action while keeping your global model for everything else, see the tip below.
 
@@ -1224,7 +1238,7 @@ When working with highlighted text, the **Save to Note** button lets you save th
 
 KOAssistant can turn a passage you highlight into an AI-generated image — visualize a character, a described setting, a diagram, or a scene straight from the text you are reading.
 
-> **Tip:** Image generation is a paid feature that uses your own provider API key, just like chat. Each image costs whatever the provider charges per image (this is separate from, and usually more expensive than, text generation), so use it deliberately.
+> **Tip:** Image generation is a paid feature that normally uses your own provider API key, just like chat. The experimental OpenAI Subscription/Codex option instead reuses the account already connected to KOAssistant and consumes that account's allowance. Each image costs whatever the provider charges per image (this is separate from, and usually more expensive than, text generation), so use it deliberately.
 
 ### How to Generate an Image
 
@@ -1244,6 +1258,7 @@ Three providers offer image generation, each with its own models (the first is t
 | **OpenAI** | `gpt-image-1-mini` (default, fast ~15 s, cheapest), `gpt-image-1.5`, `gpt-image-2` (flagship quality, slow ~60 s), `gpt-image-1`, `chatgpt-image-latest` | Supports **size** (1024x1024, landscape, portrait) and **quality** (low / medium / high) settings. |
 | **xAI (Grok)** | `grok-imagine-image` (default, fast ~7 s), `grok-imagine-image-quality` (higher quality) | Supports an **aspect ratio** setting (1:1, 16:9, 9:16, 3:2, 2:3). |
 | **Gemini** | `gemini-3.1-flash-image` (default, "Nano Banana"), `gemini-3-pro-image` | No extra size/quality parameters. |
+| **OpenAI Subscription (ChatGPT/Codex)** | Supported Codex model selected in KOAssistant | Experimental/Unofficial; reuses KOAssistant's existing OpenAI Subscription OAuth and does not request an API key. |
 
 > **Note:** Anthropic (Claude), DeepSeek, and the other chat providers do not have image APIs, so they cannot generate images. If Claude is your main provider, either pick a dedicated image provider (below) or the button stays hidden.
 
@@ -1251,7 +1266,7 @@ Three providers offer image generation, each with its own models (the first is t
 
 Image generation has its **own** provider and model selection, independent of your main chat provider, so you can (for example) chat with Claude but generate images with OpenAI. Configure this under **Settings → Advanced → Image Generation**:
 
-- **Provider** — `Follow main provider` (default; uses your current chat provider when it supports images) or an explicit choice of **OpenAI**, **xAI (Grok)**, or **Gemini**. Picking one explicitly makes image generation work regardless of which chat provider is active, using that provider's own API key.
+- **Provider** — `Follow main provider` (default; uses your current chat provider when it supports images) or an explicit choice of **OpenAI**, **xAI (Grok)**, **Gemini**, or **OpenAI Subscription (ChatGPT/Codex)**. Picking one explicitly makes image generation work regardless of which chat provider is active. API-backed providers use their own API key; the subscription provider uses the existing KOAssistant OAuth connection and needs no separate key.
 - **Model** — a per-provider model picker (OpenAI / xAI / Gemini), each defaulting to `Default` (the provider's first/recommended model).
 - **OpenAI size** and **OpenAI quality** — dimensions and quality tier (OpenAI only).
 - **Aspect ratio** — output aspect ratio (xAI only).
@@ -1264,7 +1279,7 @@ Any parameter left at **Default** is omitted from the request, letting the provi
 <a id="where-images-are-stored"></a>
 ### Where Images Are Stored
 
-Generated images are **kept** (not temporary) in `data_dir/koassistant_images` — for example `~/.config/koreader/koassistant_images` on desktop, or the equivalent under your KOReader data directory on a device. Each file is named with its creation date/time plus a snippet of the prompt, so images are self-describing on disk. They are treated as your data: preserved across plugin updates, and no reset or uninstall removes them. They are **not** included in KOAssistant backups, so copy the `koassistant_images` folder yourself if you are moving to another device.
+Generated images are **kept** (not temporary) in `data_dir/koassistant_images` — for example `~/.config/koreader/koassistant_images` on desktop, or the equivalent under your KOReader data directory on a device. Each file is named with its creation date/time plus a snippet of the prompt, so images are self-describing on disk. They are treated as your data: preserved across plugin updates, and no reset or uninstall removes them. The normal generated-image gallery is not included in KOAssistant backups, so copy the `koassistant_images` folder yourself if you are moving to another device. Entity portrait images have a separate optional backup described below.
 
 ### The Generated Images Gallery
 
@@ -3247,6 +3262,7 @@ Backups are selective: choose what to include:
 | **Configuration Files** | configuration.lua, custom_actions.lua (and apikeys.lua only if "Include API Keys" is on), if they exist | Included if files exist |
 | **Domains & Behaviors** | Custom domains and behaviors from your folders (`.md`/`.txt` files) | Included |
 | **Chat History** | All saved conversations (book, general, and library chats) | Excluded (can be large) |
+| **Entity Portrait Images** | X-Ray portrait metadata with optional managed PNG/JPG/JPEG files | Metadata with settings; image files opt-in |
 
 **Security note:** API keys are stored in plain text in backups. Only enable "Include API Keys" if you control access to your backup files.
 

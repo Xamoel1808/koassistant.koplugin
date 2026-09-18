@@ -1117,6 +1117,30 @@ local SettingsSchema = {
                             help_text = _("How the entity card is presented. The footnote panel slides in at the bottom of the screen, like KOReader's footnote popups, and follows the book's margins and font size. The floating popup is a small window anchored next to the tapped word. In both, tapping the card opens the full entry; tapping elsewhere dismisses it."),
                         },
                         {
+                            id = "xray_entity_portraits_compact",
+                            type = "toggle",
+                            text = _("Show Entity Portraits in Compact Cards"),
+                            path = "features.xray_entity_portraits_compact",
+                            default = true,
+                            help_text = _("Show a small managed portrait above a tapped-name X-Ray card when one is attached. Cards without portraits keep the existing compact layout."),
+                        },
+                        {
+                            id = "xray_entity_portraits_full",
+                            type = "toggle",
+                            text = _("Show Entity Portraits in Full Profiles"),
+                            path = "features.xray_entity_portraits_full",
+                            default = true,
+                            help_text = _("Make an attached portrait available from the full X-Ray entity profile. The full profile stays text-first on small screens; use View portrait for the native image viewer."),
+                        },
+                        {
+                            id = "xray_entity_portraits_inherit_group",
+                            type = "toggle",
+                            text = _("Inherit Portraits Across Book Groups"),
+                            path = "features.xray_entity_portraits_inherit_group",
+                            default = true,
+                            help_text = _("Reuse a portrait in later group books only when the existing spoiler-aware X-Ray identity walk finds a confident name/alias match. Ambiguous or short-only matches are left unassigned."),
+                        },
+                        {
                             id = "xray_marking_density",
                             type = "radio",
                             text_func = function(plugin)
@@ -2882,17 +2906,19 @@ local SettingsSchema = {
                                 local labels = {
                                     auto = _("Follow main provider"),
                                     openai = "OpenAI",
+                                    openai_codex = _("OpenAI Subscription (ChatGPT/Codex)"),
                                     xai = "xAI (Grok)",
                                     gemini = "Gemini",
                                 }
                                 return T(_("Provider: %1"), labels[v] or v)
                             end,
-                            help_text = _("Which provider generates images.\n\n'Follow main provider' uses your current chat provider when it supports images (OpenAI, xAI, Gemini). Picking one explicitly lets image generation work no matter which chat provider is active: it uses that provider's own API key.\n\nThe highlight-menu button only appears when the resolved provider has an API key."),
+                            help_text = _("Which provider generates images.\n\n'Follow main provider' uses your current chat provider when it supports images. OpenAI Subscription (ChatGPT/Codex) reuses the existing KOAssistant subscription login and does not request an API key; it is experimental and consumes the account's subscription allowance.\n\nThe highlight-menu button only appears when the resolved provider is configured."),
                             path = "features.image_gen_provider",
                             default = "auto",
                             options = {
                                 { value = "auto", text = _("Follow main provider") },
                                 { value = "openai", text = "OpenAI" },
+                                { value = "openai_codex", text = _("OpenAI Subscription (ChatGPT/Codex) — Experimental") },
                                 { value = "xai", text = "xAI (Grok)" },
                                 { value = "gemini", text = "Gemini" },
                             },
@@ -2922,6 +2948,19 @@ local SettingsSchema = {
                             default = "default",
                             options = imageModelOptions("xai"),
                             depends_on = { id = "image_gen_provider", value = "xai" },
+                        },
+                        {
+                            id = "image_gen_model_openai_codex",
+                            type = "radio",
+                            text_func = function(plugin)
+                                local f = plugin.settings:readSetting("features") or {}
+                                return T(_("Codex image model: %1"), f.image_gen_model_openai_codex or _("Default"))
+                            end,
+                            help_text = _("Codex model used with the Responses image_generation tool. The existing OpenAI Subscription OAuth login supplies authentication; no API key is requested."),
+                            path = "features.image_gen_model_openai_codex",
+                            default = "default",
+                            options = imageModelOptions("openai_codex"),
+                            depends_on = { id = "image_gen_provider", value = "openai_codex" },
                         },
                         {
                             id = "image_gen_model_gemini",
@@ -2991,6 +3030,41 @@ local SettingsSchema = {
                                 { value = "2:3", text = "2:3" },
                             },
                             depends_on = { id = "image_gen_provider", value = "xai" },
+                            separator = true,
+                        },
+                        {
+                            id = "image_gen_portrait_style",
+                            type = "radio",
+                            text_func = function(plugin)
+                                local f = plugin.settings:readSetting("features") or {}
+                                local labels = {
+                                    auto = _("Auto"),
+                                    anime = _("Anime / light novel"),
+                                    illustrated = _("Illustrated"),
+                                    semi_realistic = _("Semi-realistic"),
+                                    photorealistic = _("Photorealistic"),
+                                }
+                                local value = f.image_gen_portrait_style or "auto"
+                                return T(_("Portrait style: %1"), labels[value] or value)
+                            end,
+                            path = "features.image_gen_portrait_style",
+                            default = "auto",
+                            options = {
+                                { value = "auto", text = _("Auto") },
+                                { value = "anime", text = _("Anime / light novel") },
+                                { value = "illustrated", text = _("Illustrated") },
+                                { value = "semi_realistic", text = _("Semi-realistic") },
+                                { value = "photorealistic", text = _("Photorealistic") },
+                            },
+                            help_text = _("A small style hint for character portraits. Auto leaves the style to the image model and never fetches reference art."),
+                        },
+                        {
+                            id = "image_gen_portrait_instruction",
+                            type = "string",
+                            text = _("Additional portrait instruction"),
+                            path = "features.image_gen_portrait_instruction",
+                            default = "",
+                            help_text = _("Optional short instruction added to portrait prompts, for example a preference for a light-novel illustration treatment. Do not add future plot or appearance details."),
                             separator = true,
                         },
                         -- Prompt framing (2026-08-13): what surrounds the raw

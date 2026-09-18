@@ -618,6 +618,8 @@ function BackupManager:_createManifest(options, counts)
             domains = options.include_content or false,
             behaviors = options.include_content or false,
             chats = options.include_chats or false,
+            entity_media_metadata = options.include_settings or false,
+            entity_images = options.include_entity_images or false,
         },
         counts = counts or {},
         settings_schema_version = "2",
@@ -724,6 +726,18 @@ function BackupManager:_countItems(options)
             for _idx, _ in pairs(features.custom_behaviors) do
                 counts.custom_behaviors = counts.custom_behaviors + 1
             end
+        end
+
+        local ok_media, EntityMedia = pcall(require, "koassistant_entity_media")
+        if ok_media and EntityMedia.listManagedRecords then
+            local media = EntityMedia.listManagedRecords()
+            local record_count = 0
+            for _, records in pairs(media.records or {}) do
+                for _ in pairs(type(records) == "table" and records or {}) do
+                    record_count = record_count + 1
+                end
+            end
+            counts.entity_media_records = record_count
         end
     end
 
@@ -865,7 +879,8 @@ end
 function BackupManager:createBackup(options)
     -- Validate options
     options = options or {}
-    if not options.include_settings and not options.include_configs and not options.include_content and not options.include_chats then
+    if not options.include_settings and not options.include_configs and not options.include_content
+        and not options.include_chats and not options.include_entity_images then
         return { success = false, error = "No backup options selected" }
     end
 
@@ -959,6 +974,42 @@ function BackupManager:createBackup(options)
             local src = self.SETTINGS_DIR .. "/" .. ref
             if lfs.attributes(src, "mode") == "file" then
                 self:_copyFile(src, settings_dir .. "/" .. ref)
+            end
+        end
+
+        -- Entity portrait associations are small metadata and travel with a
+        -- normal settings backup. Image binaries stay opt-in so an ordinary
+        -- backup is not unexpectedly inflated by artwork.
+        do
+            local ok_media, EntityMedia = pcall(require, "koassistant_entity_media")
+            if ok_media and EntityMedia.exportMetadata then
+                local ok_enc, media_json = pcall(JSON.encode, EntityMedia.exportMetadata())
+                if ok_enc then
+                    local media_file = io.open(settings_dir .. "/koassistant_entity_media.json", "w")
+                    if media_file then
+                        media_file:write(media_json)
+                        media_file:close()
+                    end
+                else
+                    logger.warn("BackupManager: Failed to encode entity media metadata:", media_json)
+                end
+            end
+        end
+    end
+
+    -- Optional managed portrait binaries. This is deliberately separate from
+    -- metadata and only runs after an explicit user choice.
+    if options.include_entity_images then
+        local ok_media, EntityMedia = pcall(require, "koassistant_entity_media")
+        local source_dir = ok_media and EntityMedia.getImageRoot and EntityMedia.getImageRoot()
+        if source_dir and lfs.attributes(source_dir, "mode") == "directory" then
+            lfs.mkdir(temp_dir .. "/entity_media")
+            local success, err_msg = self:_copyDirectory(source_dir,
+                temp_dir .. "/entity_media/images")
+            if not success then
+                self:_removeTempDir(temp_dir)
+                if not options.skip_lock then self:_releaseLock() end
+                return { success = false, error = err_msg }
             end
         end
     end
@@ -1262,6 +1313,7 @@ function BackupManager:createRestorePoint()
         include_api_keys = true,
         include_configs = true,
         include_content = true,
+        include_entity_images = true,
         -- Include chats so a failed restore can be rolled back completely. A
         -- restore can modify chats (restore_chats), so the rollback snapshot must
         -- capture them too — otherwise rollback silently loses the user's chats.
@@ -1599,6 +1651,41 @@ function BackupManager:restoreBackup(backup_path, options)
         if lfs.attributes(temp_dir .. "/settings/koassistant_pinned_library.lua", "mode") ~= "file"
                 and lfs.attributes(backup_pinned_multi_old, "mode") == "file" then
             self:_copyFile(backup_pinned_multi_old, self.SETTINGS_DIR .. "/koassistant_pinned_library.lua")
+        end
+    end
+
+    -- Restore entity media metadata first. The JSON is intentionally separate
+    -- from koassistant_settings.lua so old backups and installs without
+    -- portraits continue to work unchanged.
+    if options.restore_settings ~= false and manifest.contents.entity_media_metadata then
+        local media_json_path = temp_dir .. "/settings/koassistant_entity_media.json"
+        local media_file = io.open(media_json_path, "r")
+        if media_file then
+            local media_json = media_file:read("*a")
+            media_file:close()
+            local ok_json, media = pcall(JSON.decode, media_json)
+            if ok_json and type(media) == "table" then
+                local ok_media, EntityMedia = pcall(require, "koassistant_entity_media")
+                if ok_media and EntityMedia.importMetadata then
+                    EntityMedia.importMetadata(media, options.merge_mode == true)
+                end
+            else
+                table.insert(warnings, "Entity portrait metadata could not be decoded")
+            end
+        end
+    end
+
+    if options.restore_entity_images ~= false and manifest.contents.entity_images then
+        local source_images = temp_dir .. "/entity_media/images"
+        if lfs.attributes(source_images, "mode") == "directory" then
+            local ok_media, EntityMedia = pcall(require, "koassistant_entity_media")
+            if ok_media and EntityMedia.getImageRoot then
+                local destination_images = EntityMedia.getImageRoot()
+                local parent = destination_images:match("^(.*)/[^/]+$")
+                if parent and lfs.attributes(parent, "mode") ~= "directory" then lfs.mkdir(parent) end
+                local copied, copy_err = self:_copyDirectory(source_images, destination_images)
+                if not copied then table.insert(warnings, copy_err or "Entity portrait images could not be restored") end
+            end
         end
     end
 

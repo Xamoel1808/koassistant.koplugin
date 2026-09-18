@@ -425,6 +425,13 @@ Registry.entries = {
         notes = "Kept images from highlight image generation (keep-all policy 2026-07-16); filenames carry date + prompt; koassistant_image_browser.lua manages deletion. Also holds koassistant_index.lua (book-association index, agenda 2b) — covered by dir-level flows, no separate entry. Preserved on teardown like exports.",
     },
     {
+        id = "entity_media_dir", label = "X-Ray entity portraits",
+        location = "data_dir", ref = "koassistant_entity_media",
+        category = "assets", backup = "opt_in",
+        opt_in_reset = true, uninstall = false,
+        notes = "Persistent X-Ray entity-media metadata and managed portrait files. Metadata is small; image files are included only when the user explicitly selects entity images in a backup.",
+    },
+    {
         id = "notebooks_vault_dir", label = "Notebook vault (default)",
         location = "data_dir", ref = "koassistant_notebooks",
         category = "notebooks", backup = false,
