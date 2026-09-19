@@ -662,6 +662,9 @@ build X-Ray checkpoints:
   again and the chain stops. The Resume row then reads "stopped: empty reply".
 
 Both take a minute of waiting per retry, which is the real retry delay, not a test artifact.
+The `ok` answer is valid X-Ray JSON so the rungs it commits are real ones and the chain
+walks its whole length; it still leaves a "Stub Character" X-Ray on the book, so run the
+ladder round against a throwaway EPUB, or delete the X-Ray afterwards.
 
 ## Per-minute admission limits (no credentials needed)
 

@@ -17,7 +17,7 @@ Shapes:
     truncated     200, a JSON object cut mid-key
     html          200, an HTML error page (proxy in front of the model)
     hangup        200 headers, then the connection closed with no body
-    ok            a normal answer, to confirm the stub itself is wired up
+    ok            a normal answer (valid X-Ray JSON, so a ladder round stays clean)
 
 --heal serves ONE empty body and then answers normally for the rest of the run:
 the shape an X-Ray checkpoint chain needs to prove it heals, since the ladder
@@ -46,6 +46,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 SHAPES = ["empty", "headers-only", "whitespace", "null", "scalar",
           "truncated", "html", "hangup", "ok"]
+
+# The "ok" answer is valid X-Ray JSON, not prose. A ladder rung whose answer does
+# not parse is cached AS-IS when the book has no X-Ray yet (koassistant_dialogs.lua,
+# the round-28 ruling: some models produce usable prose), so a prose "ok" writes a
+# junk X-Ray into whatever book the round is run against and every later rung then
+# aborts with "incremental update not applicable". Valid JSON keeps the ladder round
+# on the path it is meant to test, and still reads as a sane answer in a chat.
+OK_CONTENT = json.dumps({
+    "characters": [{"name": "Stub Character",
+                    "description": "Placed by bad_response_stub_server.py. Not a real X-Ray."}],
+    "current_state": {"summary": "The stub is wired up correctly."},
+}, ensure_ascii=False)
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 8766
 CYCLE = "--cycle" in sys.argv
@@ -95,8 +107,7 @@ class Handler(BaseHTTPRequestHandler):
             "html": b"<html><head><title>502 Bad Gateway</title></head><body>502</body></html>",
             "ok": json.dumps({"id": "stub", "object": "chat.completion", "model": "stub-model",
                               "choices": [{"index": 0,
-                                           "message": {"role": "assistant",
-                                                       "content": "the stub is wired up correctly"},
+                                           "message": {"role": "assistant", "content": OK_CONTENT},
                                            "finish_reason": "stop"}]}).encode(),
         }
         payload = bodies[shape]
