@@ -83,7 +83,7 @@ function AnthropicHandler:query(message_history, config)
     -- If streaming is enabled, return the background request function
     if use_streaming then
         request_body.stream = true
-        local requestBody = json.encode(request_body)
+        local requestBody = BaseHandler.encodeBody(request_body)
         local headers = {
             ["Content-Type"] = "application/json",
             ["x-api-key"] = config.api_key,
@@ -98,7 +98,7 @@ function AnthropicHandler:query(message_history, config)
     end
 
     -- Non-streaming mode: use background request for non-blocking UI
-    local requestBody = json.encode(request_body)
+    local requestBody = BaseHandler.encodeBody(request_body)
     local headers = {
         ["Content-Type"] = "application/json",
         ["x-api-key"] = config.api_key,

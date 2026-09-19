@@ -285,7 +285,7 @@ function GeminiHandler:query(message_history, config)
         print("Model:", model)
     end
 
-    local requestBody = json.encode(request_body)
+    local requestBody = BaseHandler.encodeBody(request_body)
 
     -- Use header-based authentication (more secure than query param)
     local headers = {

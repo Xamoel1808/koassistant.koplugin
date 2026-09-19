@@ -143,7 +143,7 @@ function CodexHandler:query(message_history, config)
     -- non-streaming callers (including book-tool gather rounds) collect it in
     -- the subprocess and receive an ordinary Responses object.
     request_body.stream = true
-    local requestBody = json.encode(request_body)
+    local requestBody = BaseHandler.encodeBody(request_body)
     headers["Content-Length"] = tostring(#requestBody)
     headers["Accept"] = "text/event-stream"
 

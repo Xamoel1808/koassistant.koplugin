@@ -36,6 +36,152 @@ function BaseHandler.withUserAgent(headers)
 end
 BaseHandler.PROTOCOL_RATELIMIT = RateLimits.PROTOCOL_MARKER
 
+--- The `undefined` the decoder hands back for a provider's non-standard token.
+--- Absent under the test encoders, hence the nil guard at every comparison.
+local JSON_UNDEFINED = type(json) == "table" and json.util and json.util.undefined or nil
+
+--- Byte length of the valid UTF-8 sequence starting at `i`, or nil when the
+--- bytes there are not one. Rejects what the standard rejects: continuation
+--- bytes with no lead, the overlong C0/C1 heads, surrogates (ED A0..BF) and
+--- everything past U+10FFFF (F5..FF).
+local function utf8SeqLen(s, i)
+    local b = s:byte(i)
+    if not b then return nil end
+    if b < 0x80 then return 1 end
+    if b < 0xC2 then return nil end
+    local need, lo, hi
+    if b < 0xE0 then
+        need, lo, hi = 2, 0x80, 0xBF
+    elseif b < 0xF0 then
+        need = 3
+        lo = (b == 0xE0) and 0xA0 or 0x80
+        hi = (b == 0xED) and 0x9F or 0xBF
+    elseif b < 0xF5 then
+        need = 4
+        lo = (b == 0xF0) and 0x90 or 0x80
+        hi = (b == 0xF4) and 0x8F or 0xBF
+    else
+        return nil
+    end
+    local c = s:byte(i + 1)
+    if not c or c < lo or c > hi then return nil end
+    for k = 2, need - 1 do
+        c = s:byte(i + k)
+        if not c or c < 0x80 or c > 0xBF then return nil end
+    end
+    return need
+end
+
+--- Position of the first byte that is not part of a valid UTF-8 sequence, or
+--- nil when the string is clean. ASCII runs are jumped in C by the find, so an
+--- all-ASCII string costs ONE find and no copy: this runs on every request on
+--- e-ink hardware and must not walk the body byte by byte.
+local function utf8FirstBad(s)
+    local pos = 1
+    while true do
+        local i = s:find("[\128-\255]", pos)
+        if not i then return nil end
+        local len = utf8SeqLen(s, i)
+        if not len then return i end
+        pos = i + len
+    end
+end
+
+--- Drop every byte that is not part of a valid UTF-8 sequence.
+local function utf8Repair(s)
+    local out, pos, keep_from = {}, 1, 1
+    while true do
+        local i = s:find("[\128-\255]", pos)
+        if not i then break end
+        local len = utf8SeqLen(s, i)
+        if len then
+            pos = i + len
+        else
+            if i > keep_from then out[#out + 1] = s:sub(keep_from, i - 1) end
+            pos = i + 1
+            keep_from = pos
+        end
+    end
+    if keep_from == 1 then return s end
+    out[#out + 1] = s:sub(keep_from)
+    return table.concat(out)
+end
+
+--- Walk a request body, repairing what KOReader's JSON encoder would otherwise
+--- turn into a document no provider can parse. Returns the ORIGINAL value when
+--- nothing needed repair (the common case allocates nothing) and a repaired
+--- copy otherwise, so the caller's config and message history are never mutated.
+--- @return any value, boolean changed
+local function scrubValue(v, key, report, seen)
+    local t = type(v)
+    if t == "string" then
+        if not utf8FirstBad(v) then return v, false end
+        report(key, "invalid UTF-8")
+        return utf8Repair(v), true
+    elseif t == "number" then
+        if v ~= v or v == math.huge or v == -math.huge then
+            report(key, "non-finite number")
+            return nil, true
+        end
+        return v, false
+    elseif t == "table" then
+        -- A cycle would spin here forever. The encoder refuses one outright
+        -- ("Recursive encoding of value"), so hand it straight on and let it
+        -- raise exactly as it did before this walk existed.
+        seen = seen or {}
+        if seen[v] then return v, false end
+        seen[v] = true
+        local copy, changed = nil, false
+        for k, sub in pairs(v) do
+            local nv, ch = scrubValue(sub, k, report, seen)
+            if ch then
+                if not copy then
+                    copy = {}
+                    for k2, v2 in pairs(v) do copy[k2] = v2 end
+                end
+                copy[k] = nv
+                changed = true
+            end
+        end
+        seen[v] = nil
+        return copy or v, changed
+    elseif t == "function" and JSON_UNDEFINED ~= nil and v == JSON_UNDEFINED then
+        report(key, "undefined sentinel")
+        return nil, true
+    end
+    return v, false
+end
+
+--- THE request-body encoder. Every handler encodes its body through this one.
+---
+--- KOReader's LuaJSON emits four tokens a provider's JSON parser rejects, and
+--- ordinary reading data reaches all four: bytes >= 0x80 ride out VERBATIM (a
+--- mojibake title, a malformed EPUB's text, a byte cut inside a character), a
+--- non-finite number prints as `NaN` or `Infinity`, and the decoder's
+--- `undefined` sentinel prints back as a bare `undefined` (the decoder accepts
+--- both non-standard tokens from a provider, so a replayed tool turn can carry
+--- one back in). The provider then rejects the WHOLE request with a message
+--- about its own parser ("There was an error parsing the body", issue #112) and
+--- the reader is left with an error that names nothing they can act on.
+---
+--- The repair is invisible to the reader and logged once per request: field
+--- names and the kind of damage, never the content.
+--- @param body table the request body
+--- @return string encoded JSON
+function BaseHandler.encodeBody(body)
+    local notes
+    local function report(key, kind)
+        notes = notes or {}
+        notes[#notes + 1] = tostring(key) .. " (" .. kind .. ")"
+    end
+    local clean = scrubValue(body, "body", report)
+    if notes then
+        logger.warn("KOAssistant: repaired request body before sending:", table.concat(notes, ", "))
+    end
+    return json.encode(clean)
+end
+
+
 --- Format a non-200 HTTP error body into a SINGLE-LINE message.
 --- The streaming reader consumes the PROTOCOL_NON_200 marker line-by-line, so a
 --- multi-line JSON body (e.g. Gemini's {\n "error": {...}}) would be truncated to

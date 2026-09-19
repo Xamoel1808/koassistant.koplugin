@@ -247,7 +247,13 @@ function RateLimits.budgetCap(provider, model, prompt_chars, prompt_tokens)
     if not k then return nil end
     local used = prompt_tokens or RateLimits.estimateTokens(prompt_chars)
     local room = k.limit_tokens - used - RateLimits.MARGIN
-    if room < RateLimits.FLOOR then return nil end
+    -- `not (room >= FLOOR)`, never `room < FLOOR`: every comparison with NaN is
+    -- false, so the `<` form would return a NaN cap, and a NaN pinned onto
+    -- max_tokens is written by the JSON encoder as a bare `NaN` that costs the
+    -- whole request (issue #112 class). saneTokenCount is what keeps a
+    -- non-finite allowance out of the memo today; this form does not depend on
+    -- it holding, and LuaJIT's tonumber does read "nan"/"inf" out of a header.
+    if not (room >= RateLimits.FLOOR) then return nil end  --luacheck: ignore 581
     return math.floor(room)
 end
 

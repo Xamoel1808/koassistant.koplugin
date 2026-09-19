@@ -271,7 +271,7 @@ function OpenAICompatibleHandler:query(message_history, config)
         print("Streaming enabled:", use_streaming and "yes" or "no")
     end
 
-    local requestBody = json.encode(request_body)
+    local requestBody = BaseHandler.encodeBody(request_body)
     local headers = built.headers
     headers["Content-Length"] = tostring(#requestBody)
 

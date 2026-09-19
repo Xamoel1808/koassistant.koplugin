@@ -200,6 +200,23 @@ TestRunner:test("budgetCap: nil when plan unknown or prompt leaves no room", fun
     TestRunner:assertNil(RL.budgetCap("p", "m", (8000 - RL.MARGIN - 100) * 3), "room under FLOOR")
 end)
 
+TestRunner:test("a non-finite allowance never reaches the memo, and never becomes a cap", function()
+    -- LuaJIT's tonumber DOES read "nan" and "inf" out of a header (Lua 5.4 does
+    -- not), and "1e400" overflows to inf on both. saneTokenCount is what keeps
+    -- all three out of the memo; budgetCap's `not (room >= FLOOR)` is the guard
+    -- behind it, because `room < FLOOR` is false for NaN and would hand back
+    -- math.floor(nan) as the cap. A NaN pinned onto max_tokens is written by the
+    -- JSON encoder as a bare `NaN` and costs the whole request (#112 class).
+    for _idx, spelling in ipairs({ "nan", "inf", "-inf", "1e400" }) do
+        RL._reset()
+        TestRunner:assertEqual(RL.record("p", "m", { limit_tokens = spelling }), false,
+            "record refuses " .. spelling)
+        local cap = RL.budgetCap("p", "m", 600)
+        TestRunner:assertTrue(cap == nil or (cap == cap and cap ~= math.huge and cap ~= -math.huge),
+            "no non-finite cap from " .. spelling)
+    end
+end)
+
 TestRunner:test("applyCap only shrinks", function()
     TestRunner:assertEqual(select(1, RL.applyCap(32768, 7533)), 7533, "shrinks default")
     TestRunner:assertEqual(select(1, RL.applyCap(65536, 7533)), 7533, "shrinks a pin")

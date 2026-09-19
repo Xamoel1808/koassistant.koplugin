@@ -742,9 +742,9 @@ local function extractChapterText(ui, chapter, max_chars)
         end
     end
 
-    -- Cap length
+    -- Cap length without cutting into the middle of a UTF-8 character.
     if #text > max_chars then
-        text = text:sub(1, max_chars)
+        text = require("koassistant_scope_resolver").utf8Head(text, max_chars)
     end
 
     return text
