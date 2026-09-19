@@ -192,13 +192,13 @@ lua tests/inspect.lua --web --port 3000
 
 ### Unit Tests (no API calls)
 
-Located in `tests/unit/` — **96 files, ~3,180 checks** (run `lua tests/run_tests.lua --unit` for the live count; the runner prints a per-file summary and no grand total).
+Located in `tests/unit/` — **104 files, ~3,180 checks** (run `lua tests/run_tests.lua --unit` for the live count; the runner prints a per-file summary and no grand total).
 
 **Contract every test file must follow:** end with `return TestRunner.failed == 0` (or return a `runAll` table). ⚠ The harness treats a `nil` return as PASSING — a forgotten return line yields a false green. Read the printed per-file summaries, not just the exit code.
 
 **Running a single file:** there is no filter flag; run directly from the repo root: `lua tests/unit/test_xray_parser.lua`.
 
-The 96 files, with what each one pins:
+The 104 files, with what each one pins:
 
 - `test_action_cache_parity.lua` - ActionCache `set()` / `saveCache()` / `loadCache()` field parity through a real disk round-trip
 - `test_action_display_text.lua` - `ActionService.getActionDisplayText`: the badge text on action buttons
@@ -271,6 +271,7 @@ The 96 files, with what each one pins:
 - `test_rate_limits.lua` - per-minute admission limits: header capture, pipe marker, session memo, refusal parsing, budget sizing
 - `test_reasoning.lua` - reasoning parameter injection and reasoning-content parsing
 - `test_reply_quote.lua` - the "Add to reply" quote formatting and popup gating
+- `test_response_body_decode.lua` - the non-streaming body guard: an empty, whitespace-only, marker-only or non-table body is named, never handed to a provider transform (#111)
 - `test_response_parser.lua` - per-provider response parsing from mock responses (the Responses-API transformer is covered in `test_openai_responses.lua`)
 - `test_session_chips_registry.lua` - `Constants.resolveSessionChips` auto-injection (a new chip appears, a dismissed one stays gone)
 - `test_setup_wizard.lua` - wizard pure helpers: font install dir, `font_ui_fallbacks` append semantics, completer probes
@@ -558,14 +559,15 @@ tests/
 │   └── web_server.lua         # LuaSocket HTTP server
 ├── tools/
 │   ├── tpm_stub_server.py     # Local provider stub playing a per-minute token allowance (no credentials)
-│   └── tpm_e2e.lua            # End-to-end transport check against that stub (KOReader's bundled LuaJIT)
+│   ├── tpm_e2e.lua            # End-to-end transport check against that stub (KOReader's bundled LuaJIT)
+│   └── bad_response_stub_server.py  # Local provider stub answering 200 with unusable bodies (#111)
 ├── web/
 │   └── index.html             # Web UI frontend
 ├── integration/
 │   ├── test_full_provider.lua    # Comprehensive tests (--full)
 │   ├── test_model_validation.lua # Model validation (--models)
 │   └── test_reasoning.lua        # Reasoning integration tests (--reasoning)
-└── unit/                      # 96 files - see "Unit Tests" above for the per-file list
+└── unit/                      # 104 files - see "Unit Tests" above for the per-file list
 ```
 
 ## Troubleshooting
@@ -617,6 +619,34 @@ Some providers may be slow. Tests wait for API response without timeout. Check n
 - **Streaming**: Not fully testable standalone (requires KOReader subprocess)
 - **Token Limits**: Tests use small limits (64-512 tokens) to minimize costs
 - **Model Validation Cost**: `--models` uses ~10 input + 1 output tokens per model (~2,000 tokens total for all 179 curated models, typically < $0.01)
+
+## Malformed responses (no credentials needed)
+
+`tests/unit/test_response_body_decode.lua` covers the pure guard (empty, whitespace-only,
+marker-only, JSON null, scalars, truncated and non-JSON bodies). For the real transport,
+`tests/tools/bad_response_stub_server.py` answers HTTP 200 with a body the plugin cannot
+use. Before the #111 fix an empty body crashed KOReader outright, so every shape here is a
+crash regression check.
+
+```bash
+python3 tests/tools/bad_response_stub_server.py                  # port 8766, empty body
+python3 tests/tools/bad_response_stub_server.py 8766 null        # one named shape
+python3 tests/tools/bad_response_stub_server.py 8766 --cycle     # a different shape each request
+```
+
+Desktop KOReader:
+
+1. Settings > Advanced > Streaming > **Enable Streaming OFF**. The decode being tested
+   lives in the NON-streaming path; with streaming on the request never reaches it.
+2. Settings > Provider > Add custom provider, base URL
+   `http://127.0.0.1:8766/v1/chat/completions`, no API key, any model id.
+3. Run any action nine times against `--cycle`, one per shape.
+
+Expect, in order: `empty`, `headers-only`, `whitespace` and `hangup` say "Empty response
+from <provider>. Please try again."; `null`, `scalar`, `truncated` and `html` say "Failed
+to parse response from <provider>"; `ok` answers normally. No crash in any of them. With
+Console Debug on the plugin log names the empty case with its buffer length. `headers-only`
+is the subtle one: the body is empty only AFTER the rate-limit marker line is stripped.
 
 ## Per-minute admission limits (no credentials needed)
 
