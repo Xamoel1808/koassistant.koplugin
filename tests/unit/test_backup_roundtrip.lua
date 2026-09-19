@@ -371,6 +371,55 @@ TestRunner:test("main.lua runs the importer off the flag (structural)", function
 end)
 
 --------------------------------------------------------------------------------
+TestRunner:suite("a restore inside a restore can run (rollback lock, audit HIGH)")
+
+-- restoreBackup's own rollback calls restoreBackup again while the outer call
+-- still holds the lock. The lock is seconds old and LOCK_TIMEOUT is 5 minutes,
+-- so an unconditional acquire could never succeed and every failed restore ended
+-- in "Restore failed AND rollback failed". The inner call passes skip_lock.
+wipeTmp()
+seed()
+local bm_lock = freshManager()
+local lock_backup = bm_lock:createBackup(BACKUP_OPTS)
+local RESTORE_OPTS = {
+    restore_settings = true,
+    restore_api_keys = true,
+    restore_configs = true,
+    restore_content = true,
+    merge_mode = false,
+    skip_restore_point = true,
+}
+
+-- Stand in for the outer restore: hold the lock, then restore the way the
+-- rollback does.
+TestRunner:assertTrue(bm_lock:_acquireLock(), "test setup: lock should be free")
+local held = {}
+for k, v in pairs(RESTORE_OPTS) do held[k] = v end
+held.skip_lock = true
+local inner = bm_lock:restoreBackup(lock_backup.backup_path, held)
+local lock_still_held = exists(BackupManager.LOCK_FILE)
+bm_lock:_releaseLock()
+
+TestRunner:test("a skip_lock restore runs while the caller holds the lock", function()
+    TestRunner:assertTrue(inner and inner.success,
+        "inner restore failed: " .. tostring(inner and inner.error))
+end)
+
+TestRunner:test("the inner restore does not release a lock it never took", function()
+    TestRunner:assertTrue(lock_still_held,
+        "the outer caller's lock must survive the inner restore")
+end)
+
+TestRunner:test("without skip_lock a held lock still blocks a second restore", function()
+    TestRunner:assertTrue(bm_lock:_acquireLock(), "test setup: lock should be free again")
+    local blocked = bm_lock:restoreBackup(lock_backup.backup_path, RESTORE_OPTS)
+    bm_lock:_releaseLock()
+    TestRunner:assertTrue(blocked and not blocked.success, "a concurrent restore must be refused")
+end)
+
+wipeTmp()
+
+--------------------------------------------------------------------------------
 TestRunner:suite("relative storage roots (the on-device layout, issue #110)")
 
 -- DataStorage:getDataDir() is the literal "." on every plain install (Kindle,
