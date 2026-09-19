@@ -18,6 +18,8 @@
 --   concise_expert.md -> "Concise Expert"
 
 local lfs = require("libs/libkoreader-lfs")
+local logger = require("koassistant_logger")
+local ScopeResolver = require("koassistant_scope_resolver")
 
 local BehaviorLoader = {}
 
@@ -121,6 +123,14 @@ end
 -- @param folder_path: Full path to the folder
 -- @param source: Source identifier ("builtin" or "folder")
 -- @return table: behavior_id -> { name, text, external, source }
+--- A behavior/domain file has to BE text. A NUL byte or a broken UTF-8
+--- sequence means the file is not what its name claims (a binary sidecar, a
+--- truncated copy): loading it puts those bytes in the system prompt, and the
+--- provider then rejects the whole request rather than the one bad field (#112).
+local function isLoadableText(content)
+    return not content:find("%z") and ScopeResolver.utf8FirstBad(content) == nil
+end
+
 local function loadFromFolder(folder_path, source)
     local behaviors = {}
 
@@ -132,11 +142,26 @@ local function loadFromFolder(folder_path, source)
 
     -- Iterate through files in the folder
     for file in lfs.dir(folder_path) do
-        -- Only process .md and .txt files, skip README files
+        -- Only process .md and .txt files; skip README files and anything whose
+        -- name starts with a dot. That leading dot is what keeps macOS AppleDouble
+        -- sidecars out: copying a plugin folder from a Mac to a Kobo writes a
+        -- "._name" companion next to EVERY file carrying an extended attribute (a
+        -- GitHub download stamps quarantine on all of them), and "._standard.md"
+        -- ends in .md exactly like the real file. Loaded, it becomes a behavior
+        -- made of 4 KB of binary and every request built from it is rejected by
+        -- the provider (#112). Finder never shows these, so the reader cannot see
+        -- what went wrong.
         local lower_file = file:lower()
-        if (file:match("%.md$") or file:match("%.txt$")) and not lower_file:match("^readme%.") then
+        if file:sub(1, 1) ~= "."
+            and (file:match("%.md$") or file:match("%.txt$"))
+            and not lower_file:match("^readme%.") then
             local id = file:gsub("%.md$", ""):gsub("%.txt$", "")
             local content = readFile(folder_path .. file)
+
+            if content and not isLoadableText(content) then
+                logger.warn("BehaviorLoader: ignoring", file, "- not text, bytes:", #content)
+                content = nil
+            end
 
             if content then
                 local fallback_name = filenameToDisplayName(id)
