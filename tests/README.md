@@ -632,6 +632,7 @@ crash regression check.
 python3 tests/tools/bad_response_stub_server.py                  # port 8766, empty body
 python3 tests/tools/bad_response_stub_server.py 8766 null        # one named shape
 python3 tests/tools/bad_response_stub_server.py 8766 --cycle     # a different shape each request
+python3 tests/tools/bad_response_stub_server.py 8766 --heal      # empty once, then normal answers
 ```
 
 Desktop KOReader:
@@ -647,6 +648,20 @@ from <provider>. Please try again."; `null`, `scalar`, `truncated` and `html` sa
 to parse response from <provider>"; `ok` answers normally. No crash in any of them. With
 Console Debug on the plugin log names the empty case with its buffer length. `headers-only`
 is the subtle one: the body is empty only AFTER the rate-limit marker line is stripped.
+
+The checkpoint chain's retry is a SEPARATE round: the `empty_response` class only reaches
+`XrayAuto.classifyStopReason` from the unattended ladder ([main.lua](../main.lua), the
+ladder step's failure branch), never from a chat. Open an EPUB pointed at the stub and
+build X-Ray checkpoints:
+
+- `--heal` (empty once, then real answers): the first rung fails, the log says "transient
+  failure ( empty_response ) - retrying in 60 s", and the retry commits the rung and the
+  chain carries on. This is the case `--cycle` cannot show, since the retry would land on
+  the next broken shape.
+- default `empty` (every request empty): the rung fails, retries once after 60 s, fails
+  again and the chain stops. The Resume row then reads "stopped: empty reply".
+
+Both take a minute of waiting per retry, which is the real retry delay, not a test artifact.
 
 ## Per-minute admission limits (no credentials needed)
 

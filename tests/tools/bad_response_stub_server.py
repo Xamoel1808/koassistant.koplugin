@@ -19,10 +19,16 @@ Shapes:
     hangup        200 headers, then the connection closed with no body
     ok            a normal answer, to confirm the stub itself is wired up
 
+--heal serves ONE empty body and then answers normally for the rest of the run:
+the shape an X-Ray checkpoint chain needs to prove it heals, since the ladder
+retries a failed rung once (after 60s) and that retry must find a real answer.
+--cycle cannot show this -- the retry would land on the next broken shape.
+
 Usage:
     python3 tests/tools/bad_response_stub_server.py                  # port 8766, empty
     python3 tests/tools/bad_response_stub_server.py 8766 null
     python3 tests/tools/bad_response_stub_server.py 8766 --cycle     # a different shape each request
+    python3 tests/tools/bad_response_stub_server.py 8766 --heal      # empty once, then normal answers
 
 Then in KOAssistant (desktop build):
   1. Settings -> Advanced -> Streaming -> Enable Streaming OFF. The crash lives in
@@ -43,17 +49,20 @@ SHAPES = ["empty", "headers-only", "whitespace", "null", "scalar",
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 8766
 CYCLE = "--cycle" in sys.argv
+HEAL = "--heal" in sys.argv
 SHAPE = next((a for a in sys.argv[1:] if a in SHAPES), "empty")
 _next = 0
 
 
 def pick_shape():
     global _next
+    _next += 1
+    if HEAL:
+        # One failure, then a provider that works: the retry must succeed.
+        return "empty" if _next == 1 else "ok"
     if not CYCLE:
         return SHAPE
-    shape = SHAPES[_next % len(SHAPES)]
-    _next += 1
-    return shape
+    return SHAPES[(_next - 1) % len(SHAPES)]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -116,5 +125,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"[stub] listening on http://127.0.0.1:{PORT}  "
-          f"{'cycling every shape' if CYCLE else 'shape=' + SHAPE}", flush=True)
+          f"{'empty once then ok' if HEAL else 'cycling every shape' if CYCLE else 'shape=' + SHAPE}",
+          flush=True)
     HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
