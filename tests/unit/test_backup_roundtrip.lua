@@ -420,6 +420,81 @@ end)
 wipeTmp()
 
 --------------------------------------------------------------------------------
+TestRunner:suite("a restore that fails halfway is rolled back (audit HIGH)")
+
+-- The lock fix only matters because of what it unblocks: the rollback itself.
+-- Nothing inside the restore pcall raises on its own (the JSON decodes are
+-- pcall-ed, LuaSettings swallows a corrupt file, the copies return false), so a
+-- device cannot reach this path by hand -- inject the failure instead, at a step
+-- that runs AFTER settings and configs were already written, and check the
+-- pre-restore state comes back.
+wipeTmp()
+seed()
+local bm_rb = freshManager()
+
+-- The archive we are about to fail to restore: different values throughout, and
+-- a chats JSON so the chat step (the last one) actually runs.
+local rb_src = TMP .. "/rollback_src"
+local ARCHIVE_CONFIG_BODY = '-- from the archive\nreturn { provider = "archived" }\n'
+writeFile(rb_src .. "/settings/koassistant_settings.lua",
+    'return {\n  ["features"] = {},\n  ["provider"] = "from_the_archive",\n}\n')
+writeFile(rb_src .. "/configs/configuration.lua", ARCHIVE_CONFIG_BODY)
+writeFile(rb_src .. "/koassistant_chats.json", '{"version":2,"chats":{}}\n')
+writeFile(rb_src .. "/manifest.json",
+    '{"version":"' .. BackupManager.BACKUP_VERSION .. '","plugin_version":"0.23.0","timestamp":1,'
+    .. '"created_date":"2026-01-01","contents":{"settings":true,"api_keys":true,"config_files":true,'
+    .. '"chats":true},"counts":{},"settings_schema_version":"2","notes":""}')
+local rb_archive = BackupManager.BACKUP_DIR .. "/koassistant_backup_rollback.koa"
+sh(string.format('tar -czf "%s" -C "%s" .', rb_archive, rb_src))
+
+-- Fail once, on the last restore step, so settings and configs are already
+-- overwritten when it happens. Once only, so the rollback's own run is clean.
+local orig_restore_chats = BackupManager.restoreChatsFromJSON
+local injected = false
+BackupManager.restoreChatsFromJSON = function(selfx, path, merge)
+    if not injected then
+        injected = true
+        error("injected failure after settings were written")
+    end
+    return orig_restore_chats(selfx, path, merge)
+end
+local rb_result = bm_rb:restoreBackup(rb_archive, {
+    restore_settings = true,
+    restore_api_keys = true,
+    restore_configs = true,
+    restore_content = true,
+    restore_chats = true,
+    merge_mode = false,
+})
+BackupManager.restoreChatsFromJSON = orig_restore_chats
+
+TestRunner:test("the failure is reported as rolled back, not as a broken restore", function()
+    TestRunner:assertTrue(injected, "test setup: the injected failure never fired")
+    TestRunner:assertTrue(rb_result and not rb_result.success, "a failed restore must not report success")
+    TestRunner:assertTrue(rb_result.rolled_back == true,
+        "rollback did not run: " .. tostring(rb_result and rb_result.error))
+end)
+
+TestRunner:test("settings written by the failed restore are undone", function()
+    local live = LuaSettingsStub:open(TMP .. "/settings/koassistant_settings.lua")
+    TestRunner:assertTrue(live:readSetting("provider") == "anthropic",
+        "provider should be back to the pre-restore value, got "
+        .. tostring(live:readSetting("provider")))
+end)
+
+TestRunner:test("configs written by the failed restore are undone", function()
+    TestRunner:assertTrue(readFile(TMP .. "/plugin/configuration.lua") == CONFIG_BODY,
+        "configuration.lua should be the pre-restore file, not the archive's")
+end)
+
+TestRunner:test("the lock is released once the rollback is done", function()
+    TestRunner:assertTrue(not exists(BackupManager.LOCK_FILE),
+        "a rolled-back restore must leave no lock behind")
+end)
+
+wipeTmp()
+
+--------------------------------------------------------------------------------
 TestRunner:suite("relative storage roots (the on-device layout, issue #110)")
 
 -- DataStorage:getDataDir() is the literal "." on every plain install (Kindle,
