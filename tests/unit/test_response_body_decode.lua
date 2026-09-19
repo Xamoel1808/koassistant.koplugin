@@ -1,8 +1,10 @@
--- Unit tests for the non-streaming response-body decode (issue #111)
+-- Unit tests for the non-streaming response pipe (issue #111)
 -- Covers:
 --   * GptQuery.decodeResponseBody — the guard that keeps an empty or non-table
 --     body out of the provider transforms
 --   * the marker-only buffer, which RateLimits.extractMarker leaves empty
+--   * GptQuery.readOutcome — grading one read() result off errno (B325), so a
+--     signal-interrupted read is not mistaken for an empty pipe
 -- No API calls - tests with mock data.
 --
 -- Why this exists: KOReader's lpeg json decoder returns nil WITHOUT raising for
@@ -81,6 +83,11 @@ end
 local GptQuery = require("koassistant_gpt_query")
 local RateLimits = require("koassistant_rate_limits")
 local decode = GptQuery.decodeResponseBody
+local readOutcome = GptQuery.readOutcome
+
+-- Platform errno values, the same split koassistant_gpt_query.lua makes.
+local EINTR = 4
+local EAGAIN = (require("ffi").os == "OSX") and 35 or 11
 
 --------------------------------------------------------------------------------
 TestRunner:suite("Empty bodies are named, never decoded")
@@ -170,6 +177,40 @@ TestRunner:test("an empty JSON object is a real body, not an empty one", functio
     local parsed, err = decode("{}")
     TestRunner:assertNil(err, "no failure reason")
     TestRunner:assertEqual(type(parsed), "table", "decoded")
+end)
+
+--------------------------------------------------------------------------------
+TestRunner:suite("readOutcome: a -1 read is graded off errno (B325)")
+--------------------------------------------------------------------------------
+
+TestRunner:test("bytes read are data, a zero read is EOF", function()
+    TestRunner:assertEqual(readOutcome(4096, nil), "data", "positive read")
+    TestRunner:assertEqual(readOutcome(1, nil), "data", "one byte")
+    TestRunner:assertEqual(readOutcome(0, nil), "eof", "child closed its end")
+end)
+
+TestRunner:test("EAGAIN is the ONLY errno that means the pipe is empty", function()
+    TestRunner:assertEqual(readOutcome(-1, EAGAIN), "empty", "nothing to read yet")
+end)
+
+TestRunner:test("EINTR is retried, never read as an empty pipe", function()
+    -- The bug: a signal-interrupted read reads as "nothing there", the drain
+    -- stops, and the bytes still queued in the pipe are dropped.
+    TestRunner:assertEqual(readOutcome(-1, EINTR), "interrupted", "signal hit the read")
+end)
+
+TestRunner:test("every other errno is a failure, not an empty pipe", function()
+    for _idx, err in ipairs({ 5, 9, 14, 22 }) do   -- EIO, EBADF, EFAULT, EINVAL
+        TestRunner:assertEqual(readOutcome(-1, err), "failed", "errno " .. err)
+    end
+end)
+
+TestRunner:test("the platform's OTHER EAGAIN value is not treated as empty", function()
+    -- EAGAIN is 11 on Linux and 35 on macOS; reading the wrong one as "empty"
+    -- would put the bug back on one platform only, which is how the O_NONBLOCK
+    -- mix-up in this same poll setup went unnoticed on device for so long.
+    local other = (EAGAIN == 11) and 35 or 11
+    TestRunner:assertEqual(readOutcome(-1, other), "failed", "the other platform's EAGAIN")
 end)
 
 --------------------------------------------------------------------------------

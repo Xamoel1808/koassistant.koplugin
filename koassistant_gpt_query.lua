@@ -120,6 +120,40 @@ local function decodeResponseBody(text)
     return parsed
 end
 
+-- read(2) errno values. Kept as literals for the same reason the O_NONBLOCK line
+-- in the poll setup below does it: older KOReader builds shipped a Linux-only
+-- posix cdef. EINTR is 4 everywhere; EAGAIN == EWOULDBLOCK on both platforms.
+local READ_EINTR = 4
+local READ_EAGAIN = ffi.os == "OSX" and 35 or 11
+-- Signal-interrupted reads retried inside ONE poll tick before the rest is left
+-- for the next one. A pipe that cannot manage one uninterrupted read in this many
+-- tries is not going to be rescued by spinning here.
+local MAX_READ_INTERRUPTS = 16
+-- Consecutive polls (0.1 s apart) that got NOTHING through but interrupted reads
+-- before the request is given up on. The poll has no timeout of its own and the
+-- drained-pipe gate below deliberately withholds the subprocess-done fallback, so
+-- without this a pipe stuck on EINTR would spin for the rest of the session. Five
+-- seconds of solid interruption with not one byte read is broken, not busy.
+local MAX_INTERRUPTED_POLLS = 50
+
+--- What the non-streaming poll must do about one read() result.
+--- read(2) answers -1 for EVERY failure and names the reason only in errno, so
+--- reading the return value three ways (>0 data / 0 EOF / anything else "nothing
+--- yet") treats a signal-interrupted read as an empty pipe and drops whatever is
+--- still queued in it (B325, #111). Only "empty" proves the pipe holds nothing
+--- more; the streaming reader has always consulted errno (stream_handler.lua) and
+--- writeAllToFD already retries on EINTR, so this is those rules on this path.
+--- @param bytes_read number|nil ffi.C.read's return, tonumber'd
+--- @param err number|nil ffi.errno(), read once, when bytes_read is negative
+--- @return string "data" | "eof" | "empty" | "interrupted" | "failed"
+local function readOutcome(bytes_read, err)
+    if bytes_read and bytes_read > 0 then return "data" end
+    if bytes_read == 0 then return "eof" end
+    if err == READ_EINTR then return "interrupted" end
+    if err == READ_EAGAIN then return "empty" end
+    return "failed"
+end
+
 --- Handle non-streaming background request with cancellable loading dialog
 --- Uses subprocess to avoid blocking the UI
 --- @param background_fn function: The background request function from handler
@@ -149,6 +183,7 @@ local function handleNonStreamingBackground(background_fn, provider, on_complete
     local completed = false
     local user_cancelled = false
     local response_data = {}
+    local interrupted_polls = 0   -- consecutive polls that read nothing but interruptions
 
     -- Cleanup function
     local function cleanup()
@@ -410,7 +445,8 @@ local function handleNonStreamingBackground(background_fn, provider, on_complete
     end
 
     -- Poll for completion using non-blocking read.
-    -- read() on non-blocking fd returns: >0 data, 0 EOF, -1 EAGAIN (no data yet).
+    -- read() on a non-blocking fd returns >0 data or 0 EOF; a -1 is graded off
+    -- errno by readOutcome (B325), never assumed to be EAGAIN.
     -- This detects pipe close instantly without depending on waitpid,
     -- which can take minutes on some Android devices.
     local function pollForData()
@@ -418,23 +454,67 @@ local function handleNonStreamingBackground(background_fn, provider, on_complete
             return
         end
 
-        -- Read all available data from the pipe
+        -- Read all available data from the pipe. Exactly one of the ways out of
+        -- this loop ("empty") proves the pipe holds nothing more, and that is
+        -- what makes it safe to read a finished child as a finished answer.
+        local pipe_empty = false
+        local interrupts = 0
         while true do
             local bytes_read = tonumber(ffi.C.read(parent_read_fd, buffer_ptr, chunksize))
-            if bytes_read and bytes_read > 0 then
+            -- Read errno ONCE: any later C call (strerror included) may clobber it.
+            local err = (bytes_read and bytes_read < 0) and ffi.errno() or nil
+            local outcome = readOutcome(bytes_read, err)
+            if outcome == "data" then
                 table.insert(response_data, ffi.string(buffer, bytes_read))
-            elseif bytes_read == 0 then
+            elseif outcome == "eof" then
                 -- EOF: subprocess closed write end, process response immediately
                 processResponse()
                 return
-            else
-                -- EAGAIN/EWOULDBLOCK (-1): no data available right now
+            elseif outcome == "interrupted" then
+                -- A signal hit the read: NOTHING was read and the bytes are still
+                -- in the pipe. Retry, and when the retries run out leave the rest
+                -- for the next tick rather than falling through to the done-check,
+                -- which would process the answer minus whatever is still queued.
+                interrupts = interrupts + 1
+                if interrupts >= MAX_READ_INTERRUPTS then
+                    logger.dbg("KOAssistant: response pipe read interrupted",
+                        interrupts, "times, resuming on the next poll")
+                    break
+                end
+            elseif outcome == "empty" then
+                -- EAGAIN/EWOULDBLOCK: no data available right now
+                pipe_empty = true
                 break
+            else
+                -- A real error (EIO, EBADF): the read will not start working, and
+                -- what has arrived so far is not the answer. Say so instead of
+                -- serving a truncated one.
+                logger.warn("KOAssistant: response pipe read failed, errno", tostring(err),
+                    err and ffi.string(ffi.C.strerror(err)) or "")
+                finish(false, nil, T(_("Could not read the response from %1."), provider))
+                return
             end
         end
 
-        -- Fallback: check if subprocess exited (works on most devices)
-        if ffiutil.isSubProcessDone(pid) then
+        -- A tick that read nothing but interruptions made no progress. A run of
+        -- them means the pipe is stuck, and since the done-check below is gated
+        -- on a drained pipe there is nothing else to end the request.
+        if pipe_empty then
+            interrupted_polls = 0
+        else
+            interrupted_polls = interrupted_polls + 1
+            if interrupted_polls >= MAX_INTERRUPTED_POLLS then
+                logger.warn("KOAssistant: response pipe stuck on interrupted reads for",
+                    interrupted_polls, "polls, giving up")
+                finish(false, nil, T(_("Could not read the response from %1."), provider))
+                return
+            end
+        end
+
+        -- Fallback: check if subprocess exited (works on most devices). Only with
+        -- the pipe drained: a read cut short by signals can still have the rest of
+        -- the answer queued behind it.
+        if pipe_empty and ffiutil.isSubProcessDone(pid) then
             processResponse()
             return
         end
@@ -1007,4 +1087,5 @@ return {
     query = queryChatGPT,
     isStreamingInProgress = isStreamingInProgress,
     decodeResponseBody = decodeResponseBody,
+    readOutcome = readOutcome,
 }

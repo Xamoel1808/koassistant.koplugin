@@ -271,7 +271,7 @@ The 104 files, with what each one pins:
 - `test_rate_limits.lua` - per-minute admission limits: header capture, pipe marker, session memo, refusal parsing, budget sizing
 - `test_reasoning.lua` - reasoning parameter injection and reasoning-content parsing
 - `test_reply_quote.lua` - the "Add to reply" quote formatting and popup gating
-- `test_response_body_decode.lua` - the non-streaming body guard: an empty, whitespace-only, marker-only or non-table body is named, never handed to a provider transform (#111)
+- `test_response_body_decode.lua` - the non-streaming response pipe: an empty, whitespace-only, marker-only or non-table body is named rather than handed to a provider transform, and one `read()` result is graded off errno so a signal-interrupted read is not mistaken for an empty pipe (#111, B325)
 - `test_response_parser.lua` - per-provider response parsing from mock responses (the Responses-API transformer is covered in `test_openai_responses.lua`)
 - `test_session_chips_registry.lua` - `Constants.resolveSessionChips` auto-injection (a new chip appears, a dismissed one stays gone)
 - `test_setup_wizard.lua` - wizard pure helpers: font install dir, `font_ui_fallbacks` append semantics, completer probes
