@@ -370,6 +370,57 @@ TestRunner:test("main.lua runs the importer off the flag (structural)", function
         and src:find("self:migrateChatsToDocSettings%(%)", 1) ~= nil, "restore callback must call the importer")
 end)
 
+--------------------------------------------------------------------------------
+TestRunner:suite("relative storage roots (the on-device layout, issue #110)")
+
+-- DataStorage:getDataDir() is the literal "." on every plain install (Kindle,
+-- Kobo, PocketBook, plain Linux), so BACKUP_DIR and friends are RELATIVE to
+-- KOReader's working directory. Every other suite here uses absolute /tmp paths,
+-- which is exactly why the broken archive command shipped: `cd <source> && tar
+-- -czf <relative archive>` resolved the archive inside the source directory and
+-- tar could not create it. Re-run the backup with the device-shaped paths.
+wipeTmp()
+seed()
+local prev_cwd = real_lfs.currentdir()
+mkdirs(TMP .. "/data/koassistant_backups")
+BackupManager.BACKUP_DIR = "./data/koassistant_backups"
+BackupManager.SETTINGS_DIR = "./settings"
+BackupManager.PLUGIN_DIR = "./plugin"
+BackupManager.CHAT_DIR = "./data/koassistant_chats"
+BackupManager.LOCK_FILE = "./data/koassistant_backups/.backup_lock"
+real_lfs.chdir(TMP)
+local bm_rel = BackupManager:new()
+local rel_result = bm_rel:createBackup(BACKUP_OPTS)
+local rel_archive_fails = bm_rel:_createArchive("./no_such_source_dir", "./data/koassistant_backups/never.koa")
+real_lfs.chdir(prev_cwd)
+
+TestRunner:test("createBackup writes a real archive when the roots are relative", function()
+    TestRunner:assertTrue(rel_result and rel_result.success,
+        "createBackup failed: " .. tostring(rel_result and rel_result.error))
+    local abs = TMP .. "/data/koassistant_backups/" .. tostring(rel_result and rel_result.backup_name)
+    TestRunner:assertTrue(exists(abs), "archive should exist at " .. abs)
+    TestRunner:assertTrue((real_lfs.attributes(abs, "size") or 0) > 0, "archive should not be empty")
+end)
+
+TestRunner:test("the reported size is the real archive size, never 0 B", function()
+    TestRunner:assertTrue((rel_result and rel_result.size or 0) > 0,
+        "a 0 B success is the symptom users saw in issue #110")
+end)
+
+TestRunner:test("the relative archive holds the settings bytes", function()
+    local check = TMP .. "/check_relative"
+    mkdirs(check)
+    sh(string.format('tar -xzf "%s" -C "%s"',
+        TMP .. "/data/koassistant_backups/" .. rel_result.backup_name, check))
+    TestRunner:assertTrue(readFile(check .. "/settings/koassistant_settings.lua") == SETTINGS_BODY,
+        "settings should round-trip from a relative-root backup")
+end)
+
+TestRunner:test("a failing tar is reported as a failure (LuaJIT os.execute returns a number)", function()
+    TestRunner:assertTrue(rel_archive_fails == false,
+        "_createArchive must return false when tar cannot read the source directory")
+end)
+
 wipeTmp()
 restoreMocks()
 return TestRunner:summary()

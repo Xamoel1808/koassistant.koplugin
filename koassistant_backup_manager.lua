@@ -33,6 +33,18 @@ local function getPluginDir()
     return data_dir .. "/../plugins/koassistant.koplugin"
 end
 
+-- Did an os.execute() call succeed? LuaJIT returns a single status number,
+-- while newer Lua versions return a boolean and optional status details.
+local function shellOk(a, b, c)
+    if type(a) == "number" then
+        return a == 0
+    end
+    if not a then
+        return false
+    end
+    return b ~= "exit" or c == 0
+end
+
 local BackupManager = {
     BACKUP_DIR = DataStorage:getDataDir() .. "/koassistant_backups",
     BACKUP_VERSION = "1.0",
@@ -264,9 +276,8 @@ function BackupManager:_copyFile(src, dest)
         return false, "Invalid destination path: " .. err_dest
     end
 
-    local success, err = os.execute(string.format('cp "%s" "%s"', safe_src, safe_dest))
-    if not success then
-        logger.warn("BackupManager: Failed to copy file: " .. src .. " -> " .. dest .. " : " .. (err or "unknown error"))
+    if not shellOk(os.execute(string.format('cp "%s" "%s"', safe_src, safe_dest))) then
+        logger.warn("BackupManager: Failed to copy file: " .. src .. " -> " .. dest)
         return false
     end
     return true
@@ -329,13 +340,19 @@ function BackupManager:_createArchive(source_dir, archive_path)
 
     -- Use tar to create compressed archive
     -- -czf: create, compress with gzip, file
-    -- -C: change to directory
-    local cmd = string.format('cd "%s" && tar -czf "%s" .', safe_source, safe_archive)
-    local success, exit_type, exit_code = os.execute(cmd)
+    -- Let tar change directories so a relative archive path still resolves
+    -- from the caller's working directory on e-reader installs.
+    local cmd = string.format('tar -czf "%s" -C "%s" .', safe_archive, safe_source)
 
-    if not success or (exit_type == "exit" and exit_code ~= 0) then
+    if not shellOk(os.execute(cmd)) then
         logger.err("BackupManager: Failed to create archive: " .. archive_path)
         return false, "Failed to create archive (tar command failed)"
+    end
+
+    local attr = lfs.attributes(archive_path)
+    if not attr or attr.mode ~= "file" or attr.size == 0 then
+        logger.err("BackupManager: Archive missing or empty after tar: " .. archive_path)
+        return false, "Failed to create archive (no archive was written)"
     end
 
     return true
@@ -381,9 +398,7 @@ function BackupManager:_extractArchive(archive_path, dest_dir, specific_file)
         cmd = string.format('tar -xzf "%s" -C "%s"', safe_archive, safe_dest)
     end
 
-    local success, exit_type, exit_code = os.execute(cmd)
-
-    if not success or (exit_type == "exit" and exit_code ~= 0) then
+    if not shellOk(os.execute(cmd)) then
         logger.err("BackupManager: Failed to extract archive: " .. archive_path)
         return false, "Failed to extract archive (tar command failed)"
     end
@@ -1146,6 +1161,7 @@ function BackupManager:validateBackup(backup_path)
     local success, err_msg = self:_extractArchive(backup_path, temp_dir, "manifest.json")
 
     if not success then
+        self:_removeTempDir(temp_dir)
         return { valid = false, errors = { err_msg } }
     end
 
@@ -1488,6 +1504,7 @@ function BackupManager:restoreBackup(backup_path, options)
     local success, err_msg = self:_extractArchive(backup_path, temp_dir)
 
     if not success then
+        self:_removeTempDir(temp_dir)
         self:_releaseLock()
         return {
             success = false,
