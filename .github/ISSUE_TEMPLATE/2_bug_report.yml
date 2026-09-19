@@ -1,0 +1,85 @@
+name: Bug report
+description: Something in KOAssistant is broken or behaves unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Fill in what you can. If you only know one of these, that is still useful.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did and what KOAssistant did. Screenshots are welcome (drag them into this box).
+      placeholder: I tapped a highlight and chose Explain, and nothing appeared.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+      placeholder: The answer popup, like it usually does.
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Can you make it happen again?
+      description: If you found steps that repeat it, list them. If it only happened once, say so.
+      placeholder: |
+        1. Open any EPUB
+        2. Highlight a sentence
+        3. Tap Explain
+
+  - type: input
+    id: version
+    attributes:
+      label: KOAssistant version
+      description: Settings (gear) > KOAssistant > About KOAssistant
+      placeholder: "0.22.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Kobo
+        - Kindle
+        - PocketBook
+        - reMarkable
+        - Boox or other Android
+        - Desktop (Linux, macOS or Windows)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: device-details
+    attributes:
+      label: Device model and KOReader version
+      description: KOReader's version is in its own gear menu, under Help > About.
+      placeholder: "Kobo Clara BW, KOReader 2025.04"
+
+  - type: input
+    id: provider
+    attributes:
+      label: AI provider and model
+      description: Whichever one you were using when it went wrong. Never paste your API key.
+      placeholder: "Anthropic, claude-sonnet-5"
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log (optional, helps a lot)
+      description: |
+        Turn on Settings > Advanced > Console Debug, repeat the problem, then attach or paste the tail of `crash.log`.
+        It sits next to the koreader folder on your device. Have a quick look before posting: it can contain book titles and parts of your chats.
+      render: text
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else?

@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest something KOAssistant should be able to do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Rough ideas are fine. A sentence or two is enough to start.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like KOAssistant to do?
+      placeholder: Let me ask about the chapter I just finished without highlighting anything first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What are you trying to get done?
+      description: The reading situation behind the idea. This often matters more than the idea itself, and sometimes there is already a way to do it.
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else?
+      description: Screenshots, how other apps do it, or how you work around it today.
