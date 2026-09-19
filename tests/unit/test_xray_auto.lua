@@ -1164,6 +1164,16 @@ TestRunner:test("classifyStopReason: transient classes vs terminal ones (item 45
         { "could not connect to server", "network", true },
         { "response is not a valid X-Ray JSON structure", "bad_json", false },
         { "rung not saved", "bad_json", false },
+        -- #111: nothing came back at all. Transient by nature (a dropped
+        -- connection, a child that died before writing, a proxy answering 200
+        -- with no body), so the one retry is the thing most likely to heal it.
+        -- Decorated and undecorated both, since the message reaches the ladder
+        -- straight from the router today.
+        { "Empty response from custom_test. Please try again.", "empty_response", true },
+        { "openai/gpt-5.5: Empty response from openai. Please try again.", "empty_response", true },
+        -- A body that arrived but could not be read is NOT this class: it stays
+        -- terminal with the rest of the unusable-response family.
+        { "Failed to parse response from custom_test", "other", false },
         { "some entirely novel failure", "other", false },
         { nil, "other", false },
     }

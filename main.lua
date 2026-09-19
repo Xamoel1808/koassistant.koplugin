@@ -15498,6 +15498,7 @@ function AskGPT:_xrayStopReasonLabel(kind)
   if kind == "timeout" then return _("request timed out") end
   if kind == "network" then return _("connection problem") end
   if kind == "bad_json" then return _("unusable response") end
+  if kind == "empty_response" then return _("empty reply") end
   if kind == "step_too_large" then return _("large step needs review") end
   -- Audit B2b: the two verdicts the classifier gained. "too_large" is a
   -- deterministic refusal (a per-minute admission limit, or a context/output

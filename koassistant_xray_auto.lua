@@ -285,6 +285,16 @@ function XrayAuto.classifyStopReason(err)
       or text:find("wifi", 1, true) or text:find("resolve host", 1, true) then
     return "network", true
   end
+  -- The plugin's own "Empty response from <provider>" (#111): nothing came back
+  -- at all. Every cause is an aberration of one attempt rather than a property
+  -- of the request — a connection dropped mid-answer, a child that died before
+  -- writing, a proxy that answered 200 with no body — so the same request sent
+  -- again is the one thing likely to heal it. Matched on the three-word plugin
+  -- wording, not a bare "empty response", and unanchored because the string can
+  -- arrive decorated with a provider/model prefix.
+  if text:find("empty response from", 1, true) then
+    return "empty_response", true
+  end
   if text:find("not a valid x%-ray json") or text:find("json", 1, true)
       or text:find("truncated", 1, true) or text:find("rung not saved", 1, true) then
     return "bad_json", false
