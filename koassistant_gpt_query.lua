@@ -96,6 +96,30 @@ local function isStreamingInProgress(result)
     return type(result) == "table" and result._streaming == true
 end
 
+--- Decode a non-streaming response body.
+--- KOReader's lpeg json decoder returns nil WITHOUT raising for an empty or
+--- whitespace-only string, so a pcall around json.decode is not enough: the nil
+--- travelled all the way into the provider transform and crashed KOReader on
+--- `response.error` (issue #111, a Kindle X-Ray batch). An empty buffer is a real
+--- outcome — the child can exit without writing (killed before its own error
+--- marker), and a 200 with no body leaves nothing behind once the rate-limit
+--- marker line is stripped — so it is named apart from a body that failed to parse.
+--- @param text string|nil: the buffer, marker already stripped
+--- @return table|nil: the decoded object, nil on either failure
+--- @return string|nil: "empty" or "unparseable" when the decode did not yield a table
+local function decodeResponseBody(text)
+    if type(text) ~= "string" or text:match("^%s*$") then
+        return nil, "empty"
+    end
+    local ok, parsed = pcall(json.decode, text)
+    -- A decoded non-table (JSON null's truthy function sentinel, a bare string
+    -- or number) is no more usable to a transform than a parse failure.
+    if not ok or type(parsed) ~= "table" then
+        return nil, "unparseable"
+    end
+    return parsed
+end
+
 --- Handle non-streaming background request with cancellable loading dialog
 --- Uses subprocess to avoid blocking the UI
 --- @param background_fn function: The background request function from handler
@@ -338,8 +362,15 @@ local function handleNonStreamingBackground(background_fn, provider, on_complete
         end
 
         -- Parse JSON response
-        local ok, parsed = pcall(json.decode, full_response)
-        if not ok then
+        local parsed, decode_err = decodeResponseBody(full_response)
+        if decode_err == "empty" then
+            -- Nothing came back at all: the child wrote no body and no error
+            -- marker of its own. The length is the whole diagnosis here.
+            logger.warn("Empty non-streaming response from", provider,
+                "- buffer bytes:", #full_response)
+            finish(false, nil, T(_("Empty response from %1. Please try again."), provider))
+            return
+        elseif decode_err then
             -- 200 chars stopped inside the HTTP headers, so a 200-with-unparseable-body
             -- (the 2026-08-18 X-Ray case) could not be diagnosed at all. This is a
             -- rare failure path; 2000 buys the start of the body without spamming.
@@ -355,9 +386,18 @@ local function handleNonStreamingBackground(background_fn, provider, on_complete
             print(string.format("[%s] Token usage: %s", provider, DebugUtils.formatUsage(usage)))
         end
 
-        -- Use response parser to extract content
+        -- Use response parser to extract content.
+        -- Wrapped: this runs inside a UIManager task, so an error in a provider
+        -- transform unwinds past the scheduler and takes KOReader down with it
+        -- (issue #111). A malformed response is worth a message, never a crash.
         if response_parser then
-            local parse_success, content, reasoning, web_search_used = response_parser(parsed)
+            local called_ok, parse_success, content, reasoning, web_search_used =
+                pcall(response_parser, parsed)
+            if not called_ok then
+                logger.warn("Response parser error for", provider, ":", tostring(parse_success))
+                finish(false, nil, T(_("Could not read the response from %1."), provider))
+                return
+            end
             if parse_success then
                 finish(true, content, nil, reasoning, web_search_used, usage)
             else
@@ -966,4 +1006,5 @@ end
 return {
     query = queryChatGPT,
     isStreamingInProgress = isStreamingInProgress,
+    decodeResponseBody = decodeResponseBody,
 }
