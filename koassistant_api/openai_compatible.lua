@@ -308,24 +308,10 @@ function OpenAICompatibleHandler:query(message_history, config)
         return true, result, reasoning, web_search_used
     end
 
-    -- NanoGPT's longer X-Ray ladder requests can outlive the gateway's silent
-    -- non-streaming connection. Keep the background UI/cancel path, but receive
-    -- SSE chunks and assemble a normal completion before the X-Ray parser runs.
-    local collect_stream = config.provider == "custom_nanogpt"
-        and config.features and config.features._background_request == true
-    if collect_stream then
-        request_body.stream = true
-        requestBody = BaseHandler.encodeBody(request_body)
-        headers["Content-Length"] = tostring(#requestBody)
-        headers["Accept"] = "text/event-stream"
-    end
-
     return {
         _background_fn = self:backgroundRequest(base_url, headers, requestBody),
         _non_streaming = true,
         _response_parser = response_parser,
-        _response_decoder = collect_stream
-            and require("koassistant_api.sse_collector").decode or nil,
     }
 end
 
