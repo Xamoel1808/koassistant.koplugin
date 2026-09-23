@@ -534,13 +534,6 @@ local function showFootnoteCard(hit, opts)
     -- 2026-08-17); the warning line below stays
     local c = cardContent(hit, opts)
     c.portrait_path = portraitPathForHit(hit, opts)
-    local portrait_html = ""
-    if c.portrait_path then
-        local src = c.portrait_path:gsub("&", "&amp;"):gsub('"', "&quot;")
-        src = "file://" .. src:gsub(" ", "%%20")
-        portrait_html = '<div class="koa-portrait"><img src="' .. src
-            .. '" alt="" /></div>'
-    end
     local html = "<div>" .. (c.warn and "\u{26A0} " or "") .. "<b>" .. esc(c.name) .. "</b>"
         .. (c.kind ~= "" and (" · " .. esc(c.kind)) or "") .. "</div>"
     if c.line then
@@ -551,13 +544,16 @@ local function showFootnoteCard(hit, opts)
     end
     -- Affordance: stock footnote panels do nothing on an inside tap, ours
     -- advances the card / opens the full entry — say so, muted
-    html = portrait_html .. html .. '<div class="koa-meta">' .. esc(c.hint) .. "</div>"
+    html = html .. '<div class="koa-meta">' .. esc(c.hint) .. "</div>"
+    if c.portrait_path then
+        html = html .. '<div class="koa-meta">' .. esc(_("Tap image to zoom")) .. "</div>"
+    end
 
     local ui = opts.ui
     local doc = ui and ui.document
     local params = {
         html = html,
-        css = ".koa-portrait { text-align: center; margin-bottom: 0.35em; } .koa-portrait img { max-width: 120px; max-height: 150px; } .koa-line { margin-top: 0.4em; } .koa-meta { margin-top: 0.5em; font-size: 80%; color: #555555; }",
+        css = ".koa-line { margin-top: 0.4em; } .koa-meta { margin-top: 0.5em; font-size: 80%; color: #555555; }",
         dialog = ui and ui.dialog,
         follow_callback = nil, -- set below (needs the popup upvalue)
     }
@@ -592,6 +588,29 @@ local function showFootnoteCard(hit, opts)
         popup = nil
         return showPopupCard(hit, opts)
     end
+    local portrait_widget
+    if c.portrait_path then
+        local ok_image, ImageWidget = pcall(require, "ui/widget/imagewidget")
+        if ok_image and ImageWidget then
+            local Screen = require("device").screen
+            local VerticalGroup = require("ui/widget/verticalgroup")
+            local VerticalSpan = require("ui/widget/verticalspan")
+            portrait_widget = ImageWidget:new{
+                file = c.portrait_path,
+                width = Screen:scaleBySize(120),
+                height = Screen:scaleBySize(150),
+                scale_factor = 0,
+            }
+            -- Footnote HTML substitutes [image] for local files. Paint with
+            -- KOReader's native image widget while retaining the text panel.
+            popup.container[1] = VerticalGroup:new{
+                portrait_widget,
+                VerticalSpan:new{ width = Screen:scaleBySize(5) },
+                popup.container[1],
+            }
+            popup.height = popup.container:getSize().h
+        end
+    end
     -- The card never scrolls (short content) — free the inside tap for the
     -- full-entry action instead of ScrollHtmlWidget's tap-to-scroll zones
     if popup.htmlwidget and popup.htmlwidget.setTapScrollEnabled then
@@ -600,6 +619,20 @@ local function showFootnoteCard(hit, opts)
     popup.onTapClose = function(fw, _arg, ges)
         if ges.pos:notIntersectWith(fw.container.dimen) then
             UIManager:close(fw)
+            return true
+        end
+        if portrait_widget and portrait_widget.dimen
+            and not ges.pos:notIntersectWith(portrait_widget.dimen) then
+            UIManager:close(fw)
+            local ok_viewer, ImageViewer = pcall(require, "ui/widget/imageviewer")
+            if ok_viewer and ImageViewer then
+                UIManager:show(ImageViewer:new{
+                    file = c.portrait_path,
+                    with_title_bar = true,
+                    title_text = c.name,
+                    is_doc_page = false,
+                })
+            end
             return true
         end
         UIManager:close(fw)

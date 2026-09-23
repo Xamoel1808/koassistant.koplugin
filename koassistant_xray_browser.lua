@@ -3223,6 +3223,58 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
             end,
         }
     end
+    local function chooseBookImage()
+        UIManager:close(dialog)
+        local BookImages = require("koassistant_book_images")
+        local images, err = BookImages.list(file)
+        if not images then notify(tostring(err)); return end
+        if #images == 0 then notify(_("No supported illustrations or cover found in this book.")); return end
+        local menu
+        local rows = {}
+        for _, image in ipairs(images) do
+            local entry = image
+            rows[#rows + 1] = {
+                text = (entry.cover and _("Cover: ") or "") .. entry.label,
+                mandatory = string.format("%d KB", math.floor(entry.size / 1024 + 0.5)),
+                callback = function()
+                    UIManager:close(menu)
+                    local path, extract_err = BookImages.extract(file, entry)
+                    if not path then notify(tostring(extract_err)); return end
+                    local ok_viewer, ImageViewer = pcall(require, "ui/widget/imageviewer")
+                    if not ok_viewer then os.remove(path); notify(_("Image preview is unavailable.")); return end
+                    local preview = ImageViewer:new{
+                        file = path, with_title_bar = true,
+                        title_text = entry.label, is_doc_page = false,
+                    }
+                    local old_close = preview.onClose
+                    preview.onClose = function(self_v, ...)
+                        if old_close then old_close(self_v, ...) end
+                        UIManager:show(require("ui/widget/confirmbox"):new{
+                            text = T(_("Use this book image for %1?"),
+                                XrayParser.getItemName(item, category_key) or image_noun),
+                            ok_text = _("Attach image"),
+                            ok_callback = function()
+                                attach(path, "book", state.record ~= nil,
+                                    { url = file .. "#" .. entry.name })
+                                os.remove(path)
+                            end,
+                            cancel_callback = function() os.remove(path) end,
+                        })
+                    end
+                    UIManager:show(preview)
+                end,
+            }
+        end
+        menu = Menu:new{
+            title = _("Choose book illustration or cover"),
+            item_table = rows,
+            is_borderless = true,
+            is_popout = false,
+            width = Screen:getWidth(),
+            height = Screen:getHeight(),
+        }
+        UIManager:show(menu)
+    end
     local function searchOnline()
         UIManager:close(dialog)
         local Commons = require("koassistant_commons_images")
@@ -3368,6 +3420,7 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
             or _("Restore missing local image…"), callback = function()
             UIManager:close(dialog); chooseLocal()
         end }}
+        buttons[#buttons + 1] = {{ text = _("Choose book illustration or cover…"), callback = chooseBookImage }}
         buttons[#buttons + 1] = {{ text = _("Generate replacement…"), callback = generate }}
         buttons[#buttons + 1] = {{ text = _("Use generated image…"), callback = chooseGallery }}
         buttons[#buttons + 1] = {{ text = _("Search Wikimedia Commons…"), callback = searchOnline }}
@@ -3385,6 +3438,7 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
         buttons[#buttons + 1] = {{ text = _("Choose local image…"), callback = function()
             UIManager:close(dialog); chooseLocal()
         end }}
+        buttons[#buttons + 1] = {{ text = _("Choose book illustration or cover…"), callback = chooseBookImage }}
         buttons[#buttons + 1] = {{ text = person and _("Generate portrait") or _("Generate image"), callback = generate }}
         buttons[#buttons + 1] = {{ text = _("Use generated image…"), callback = chooseGallery }}
         buttons[#buttons + 1] = {{ text = _("Search Wikimedia Commons…"), callback = searchOnline }}
