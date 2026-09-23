@@ -1575,6 +1575,16 @@ function AskGPT:initSettings()
     -- not one-time (re-evaluates every launch) and needs self + ModelLists.
     local needs_save = require("koassistant_migrations").run(features)
 
+    -- Models the reader added before they joined a curated provider list
+    -- should no longer appear as custom rows. Preserve the selected model.
+    for provider, entries in pairs(features.custom_models or {}) do
+      local filtered, changed = ModelLists.filterPromotedCustomModels(provider, entries)
+      if changed then
+        features.custom_models[provider] = filtered
+        needs_save = true
+      end
+    end
+
     -- Orphan global key from an early 2026 build, never read since (registry
     -- entry legacy_chat_storage_version; storage sweep 2026-09-03)
     if G_reader_settings:has("koassistant_chat_storage_version") then
@@ -1895,7 +1905,9 @@ end
 function AskGPT:getCustomModels(provider)
   local features = self.settings:readSetting("features") or {}
   local custom_models = features.custom_models or {}
-  return custom_models[provider] or {}
+  local entries = custom_models[provider] or {}
+  local filtered = ModelLists.filterPromotedCustomModels(provider, entries)
+  return filtered
 end
 
 -- Tier GUI helpers (docs/tier_gui_plan.md): features.tier_overrides[provider][tier]

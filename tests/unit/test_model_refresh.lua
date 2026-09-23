@@ -113,5 +113,28 @@ TestRunner:test("_shipped_defaults data integrity", function()
     end
 end)
 
+TestRunner:test("Codex picker promotes GPT-6 and omits old GPT-5.6 models", function()
+    TestRunner:assertEqual(ModelLists.openai_codex[1], "gpt-6-sol", "Codex default")
+    TestRunner:assertEqual(ModelLists.openai_codex[2], "gpt-6-luna", "Codex fast model")
+    for _, model in ipairs(ModelLists.openai_codex) do
+        TestRunner:assertTrue(not model:find("gpt-5.6", 1, true), "old Codex model hidden")
+    end
+    for _, model in ipairs(ModelLists.getImageModels("openai_codex")) do
+        TestRunner:assertTrue(not model:find("gpt-5.6", 1, true), "old Codex image model hidden")
+    end
+end)
+
+TestRunner:test("promoted custom Codex models become built-in without losing other IDs", function()
+    local filtered, changed = ModelLists.filterPromotedCustomModels("openai_codex",
+        { "gpt-6-luna", "other-model", "gpt-6-sol" })
+    TestRunner:assertTrue(changed, "duplicates are found")
+    TestRunner:assertEqual(#filtered, 1, "only the unrelated custom model remains")
+    TestRunner:assertEqual(filtered[1], "other-model", "custom model preserved")
+    local custom, untouched = ModelLists.filterPromotedCustomModels("custom_nanogpt",
+        { "gpt-6-sol" })
+    TestRunner:assertTrue(not untouched, "custom provider models are untouched")
+    TestRunner:assertEqual(custom[1], "gpt-6-sol", "custom provider keeps its model")
+end)
+
 local ok = TestRunner:summary()
 return ok

@@ -39,21 +39,10 @@ local ModelLists = {
     },
 
     openai_codex = {
-        -- OpenAI ChatGPT subscription (Codex OAuth) reuses the same curated
-        -- subscription model slugs as direct OpenAI, but authenticates with
-        -- device-code OAuth against ChatGPT's Codex backend.
-        -- GPT-6 availability on the subscription backend has not been
-        -- verified per plan. Legacy 5.6 models remain selectable if needed.
-        "gpt-6-sol",                    -- balanced (default)
-        "gpt-6-astra",                  -- frontier
+        -- ChatGPT/Codex subscription model IDs. Keep old IDs in
+        -- _shipped_defaults for migration, not in the normal picker.
+        "gpt-6-sol",                    -- default
         "gpt-6-luna",                   -- fast
-        "gpt-5.6-terra",                -- previous default
-        "gpt-5.6-sol",
-        "gpt-5.6-luna",
-        "gpt-5.5",                      -- served on free accounts
-        "gpt-5.4",                      -- refused on free accounts
-        "gpt-5.4-mini",                 -- served on free accounts
-        "gpt-5.4-nano",                 -- refused on free accounts
     },
 
     deepseek = {
@@ -602,7 +591,6 @@ local ModelLists = {
         frontier = {
             anthropic = "claude-fable-5",
             openai = "gpt-6-astra",
-            openai_codex = "gpt-6-astra",
             gemini = "gemini-3.1-pro-preview",       -- paid-only deep reasoning
         },
 
@@ -679,7 +667,7 @@ local ModelLists = {
         ultrafast = {
             anthropic = "claude-haiku-4-5-20251001",
             openai = "gpt-5.4-nano",
-            openai_codex = "gpt-5.4-mini", -- smallest slug served on ALL plans (nano 400s on free accounts; still pickable manually)
+            openai_codex = "gpt-6-luna",
             deepseek = "deepseek-v4-flash",
             gemini = "gemini-3.5-flash-lite",
             groq = "openai/gpt-oss-20b",            -- see fast-tier note: Groq retired every non-reasoning production model 2026-08-16
@@ -897,12 +885,7 @@ ModelLists._image_models = {
     -- picker never suggests a gpt-image model to the Codex backend.
     openai_codex = {
         "gpt-6-sol",
-        "gpt-6-astra",
         "gpt-6-luna",
-        "gpt-5.6-terra",
-        "gpt-5.6-sol",
-        "gpt-5.6-luna",
-        "gpt-5.5",
     },
 }
 
@@ -919,6 +902,27 @@ end
 function ModelLists.getDefaultImageModel(provider)
     local list = ModelLists._image_models[provider]
     return list and list[1]
+end
+
+--- A model added manually before it became built-in should now appear as a
+--- normal built-in row. Keep genuinely custom IDs in their original order.
+function ModelLists.filterPromotedCustomModels(provider, custom_models)
+    if type(custom_models) ~= "table" or provider == "ollama"
+        or type(ModelLists[provider]) ~= "table" then
+        return custom_models, false
+    end
+    local built_in = {}
+    for _, model in ipairs(ModelLists[provider]) do built_in[model] = true end
+    local filtered = {}
+    local changed = false
+    for _, model in ipairs(custom_models) do
+        if built_in[model] then
+            changed = true
+        else
+            filtered[#filtered + 1] = model
+        end
+    end
+    return changed and filtered or custom_models, changed
 end
 
 -- Get sorted list of all provider names
