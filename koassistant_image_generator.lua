@@ -592,6 +592,23 @@ function ImageGenerator.promptTemplateText(features)
     }, features)
 end
 
+--- Fetch a selected remote image without blocking the reader UI. The caller
+--- must validate the URL and image bytes before attaching them to an entity.
+function ImageGenerator.downloadImageUrl(url, on_done)
+    local pid, read_fd = ffiutil.runInSubProcess(makeDownloadFn(url), true)
+    if not pid then
+        on_done(nil, "failed to start image download")
+        return
+    end
+    pollSubprocess(pid, read_fd, function(raw)
+        if raw:sub(1, 3) == "OK:" then
+            on_done(raw:sub(4))
+        else
+            on_done(nil, raw:sub(5))
+        end
+    end)
+end
+
 -- ---------------------------------------------------------------------------
 -- ChatGPT/Codex subscription image generation
 -- ---------------------------------------------------------------------------

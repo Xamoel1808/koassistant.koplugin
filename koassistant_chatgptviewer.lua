@@ -1412,6 +1412,7 @@ local ChatGPTViewer = InputContainer:extend {
   on_edit = nil,
   on_open_reader = nil,
   on_export = nil,
+  on_view_image = nil,  -- Optional associated image in a simple artifact viewer
 
   -- Metadata for cache export (simple_view only)
   -- Contains: cache_type, book_title, book_author, progress_decimal, model, timestamp, used_annotations
@@ -2873,6 +2874,15 @@ function ChatGPTViewer:init()
     table.insert(simple_view_row1, {
       text = "\u{2192} " .. _("Group"),
       callback = self.group_open,
+      hold_callback = self.default_hold_callback,
+    })
+  end
+
+  if self.on_view_image then
+    table.insert(simple_view_row1, {
+      text = _("Image"),
+      id = "view_image",
+      callback = self.on_view_image,
       hold_callback = self.default_hold_callback,
     })
   end

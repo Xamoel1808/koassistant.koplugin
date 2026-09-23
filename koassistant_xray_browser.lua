@@ -2643,7 +2643,10 @@ function XrayBrowser:showItemDetail(item, category_key, title, source, nav_conte
         local portrait_state = Media.resolve(self.metadata.book_file, item, category_key, {
             features = (self.metadata.configuration or {}).features or {},
         })
-        local portrait_text = portrait_state.path and _("Portrait ✓") or _("Portrait…")
+        local is_person = category_key == "characters" or category_key == "key_figures"
+        local portrait_text = is_person
+            and (portrait_state.path and _("Portrait ✓") or _("Portrait…"))
+            or (portrait_state.path and _("Image ✓") or _("Image…"))
         table.insert(buttons_rows, 1, {{
             text = portrait_text,
             callback = function()
@@ -3084,7 +3087,7 @@ function XrayBrowser:_viewEntityPortrait(path)
     UIManager:show(ImageViewer:new{
         file = path,
         with_title_bar = true,
-        title_text = _("Entity portrait"),
+        title_text = _("Entity image"),
         is_doc_page = false,
     })
 end
@@ -3158,6 +3161,8 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
     local file = self.metadata.book_file
     local state = Media.resolve(file, item, category_key, { features = features })
     local ImageBrowser = require("koassistant_image_browser")
+    local person = category_key == "characters" or category_key == "key_figures"
+    local image_noun = person and _("portrait") or _("image")
     local self_ref = self
     local dialog
     local function notify(text, timeout)
@@ -3166,12 +3171,17 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
     local function refresh()
         reopenPortraitEntity(self_ref, item, category_key, title, source, nav_context, viewer)
     end
-    local function attach(path, source_kind, replace)
+    local function attach(path, source_kind, replace, metadata)
+        metadata = metadata or {}
         local ok, result = Media.attachLocal(file, item, category_key, path, {
             source = source_kind,
             replace = replace == true,
             allow_ambiguous = state.ambiguous == true,
             features = features,
+            original = metadata.url,
+            source_page = metadata.source_page,
+            license = metadata.license,
+            artist = metadata.artist,
         })
         if not ok then
             notify(tostring(result or _("Could not attach that image.")))
@@ -3185,8 +3195,8 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
             or Device.home_dir or "/mnt/us"
         local chooser
         chooser = PathChooser:new{
-            title = state.ambiguous and _("Choose a book-local entity portrait")
-                or (state.path and _("Replace entity portrait") or _("Choose entity portrait")),
+            title = state.ambiguous and T(_("Choose a book-local entity %1"), image_noun)
+                or (state.path and T(_("Replace entity %1"), image_noun) or T(_("Choose entity %1"), image_noun)),
             path = start_path,
             select_directory = false,
             select_file = true,
@@ -3212,6 +3222,65 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
                 attach(path, "gallery", state.record ~= nil)
             end,
         }
+    end
+    local function searchOnline()
+        UIManager:close(dialog)
+        local Commons = require("koassistant_commons_images")
+        local input
+        input = InputDialog:new{
+            title = _("Search Wikimedia Commons"),
+            input = XrayParser.getItemName(item, category_key) or "",
+            buttons = {{
+                { text = _("Cancel"), callback = function() UIManager:close(input) end },
+                { text = _("Search"), is_enter_default = true, callback = function()
+                    local query = input:getInputText()
+                    UIManager:close(input)
+                    Commons.search(query, function(results, err)
+                        if not results then notify(tostring(err or _("Image search failed."))) return end
+                        if #results == 0 then notify(_("No supported Commons images found. Try another term.")) return end
+                        local results_dialog
+                        local rows = {}
+                        for _, image in ipairs(results) do
+                            local selected = image
+                            rows[#rows + 1] = {{ text = selected.title, callback = function()
+                                UIManager:close(results_dialog)
+                                Commons.download(selected, function(path, download_err)
+                                    if not path then notify(tostring(download_err or _("Image download failed."))) return end
+                                    local ok_viewer, ImageViewer = pcall(require, "ui/widget/imageviewer")
+                                    if not ok_viewer then os.remove(path); notify(_("Image preview is unavailable.")); return end
+                                    local preview = ImageViewer:new{
+                                        file = path, with_title_bar = true,
+                                        title_text = selected.title, is_doc_page = false,
+                                    }
+                                    local old_close = preview.onClose
+                                    preview.onClose = function(self_v, ...)
+                                        if old_close then old_close(self_v, ...) end
+                                        UIManager:show(require("ui/widget/confirmbox"):new{
+                                            text = T(_("Attach this Commons image?\n\nLicense: %1\nArtist: %2\nSource: %3"),
+                                                selected.license ~= "" and selected.license or _("See source page"),
+                                                selected.artist ~= "" and selected.artist or _("See source page"),
+                                                selected.source_page or ""),
+                                            ok_text = _("Attach image"),
+                                            ok_callback = function()
+                                                attach(path, "commons", state.record ~= nil, selected)
+                                                os.remove(path)
+                                            end,
+                                            cancel_callback = function() os.remove(path) end,
+                                        })
+                                    end
+                                    UIManager:show(preview)
+                                end)
+                            end }}
+                        end
+                        rows[#rows + 1] = {{ text = _("Cancel"), callback = function() UIManager:close(results_dialog) end }}
+                        results_dialog = ButtonDialog:new{ title = _("Commons images"), buttons = rows }
+                        UIManager:show(results_dialog)
+                    end)
+                end },
+            }},
+        }
+        UIManager:show(input)
+        input:onShowKeyboard()
     end
     local function startGeneration(provider)
         local ImageGenerator = require("koassistant_image_generator")
@@ -3255,7 +3324,7 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
             notify(provider_or_error)
             return
         end
-        if not Media.hasKnownAppearance(item) then
+        if person and not Media.hasKnownAppearance(item) then
             UIManager:show(require("ui/widget/confirmbox"):new{
                 text = _("The current spoiler-safe X-Ray does not contain a physical appearance description. Generate a deliberately non-specific portrait anyway?"),
                 ok_text = _("Generate generic portrait"),
@@ -3269,8 +3338,8 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
         UIManager:close(dialog)
         UIManager:show(require("ui/widget/confirmbox"):new{
             text = state.record
-                and _("Remove the portrait association? The managed image will be kept on disk for safe recovery.")
-                or _("No portrait is attached."),
+                and _("Remove the image association? The managed image will be kept on disk for safe recovery.")
+                or _("No image is attached."),
             ok_text = _("Remove"),
             ok_callback = function()
                 local ok, err = Media.removePortrait(file, item, category_key)
@@ -3281,18 +3350,18 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
     local buttons = {}
     if state.ambiguous then
         buttons[#buttons + 1] = {{
-            text = _("Several portraits match; new choices stay book-local"),
+            text = _("Several images match; new choices stay book-local"),
             enabled = false,
         }}
     end
     local has_association = state.record ~= nil
     if has_association then
-        buttons[#buttons + 1] = {{ text = _("View portrait"), callback = function()
+        buttons[#buttons + 1] = {{ text = person and _("View portrait") or _("View image"), callback = function()
             UIManager:close(dialog)
             if state.path then
                 self_ref:_viewEntityPortrait(state.path)
             else
-                notify(_("The managed portrait file is missing. Choose Replace to attach it again."))
+                notify(_("The managed image file is missing. Choose Replace to attach it again."))
             end
         end }}
         buttons[#buttons + 1] = {{ text = state.path and _("Replace with local image…")
@@ -3301,20 +3370,31 @@ function XrayBrowser:_showEntityPortraitPopup(item, category_key, title, source,
         end }}
         buttons[#buttons + 1] = {{ text = _("Generate replacement…"), callback = generate }}
         buttons[#buttons + 1] = {{ text = _("Use generated image…"), callback = chooseGallery }}
-        buttons[#buttons + 1] = {{ text = _("Remove portrait"), callback = remove }}
+        buttons[#buttons + 1] = {{ text = _("Search Wikimedia Commons…"), callback = searchOnline }}
+        local credit = state.portrait
+        if credit and credit.source_page then
+            buttons[#buttons + 1] = {{ text = _("Image source and credit…"), callback = function()
+                UIManager:show(InfoMessage:new{
+                    text = T(_("Source: %1\nLicense: %2\nArtist: %3"),
+                        credit.source_page, credit.license or "", credit.artist or ""),
+                })
+            end }}
+        end
+        buttons[#buttons + 1] = {{ text = person and _("Remove portrait") or _("Remove image"), callback = remove }}
     else
         buttons[#buttons + 1] = {{ text = _("Choose local image…"), callback = function()
             UIManager:close(dialog); chooseLocal()
         end }}
-        buttons[#buttons + 1] = {{ text = _("Generate portrait"), callback = generate }}
+        buttons[#buttons + 1] = {{ text = person and _("Generate portrait") or _("Generate image"), callback = generate }}
         buttons[#buttons + 1] = {{ text = _("Use generated image…"), callback = chooseGallery }}
+        buttons[#buttons + 1] = {{ text = _("Search Wikimedia Commons…"), callback = searchOnline }}
     end
     buttons[#buttons + 1] = {{ text = _("Cancel"), callback = function() UIManager:close(dialog) end }}
     dialog = ButtonDialog:new{
-        title = state.ambiguous and _("Portrait — ambiguous identity")
-            or (state.path and _("Portrait")
-                or (has_association and _("Portrait — file missing")
-                    or _("Portrait — none attached"))),
+        title = state.ambiguous and T(_("%1 — ambiguous identity"), image_noun)
+            or (state.path and image_noun
+                or (has_association and T(_("%1 — file missing"), image_noun)
+                    or T(_("%1 — none attached"), image_noun))),
         buttons = buttons,
     }
     UIManager:show(dialog)
@@ -4241,9 +4321,16 @@ function XrayBrowser:showWikiViewer(item, category_key, cached, title, source, n
             wiki_title = wiki_title .. " · " .. rel
         end
     end
+    local Media = require("koassistant_entity_media")
+    local image_state = Media.resolve(file, item, category_key, {
+        features = ((self.metadata.configuration or {}).features or {}),
+    })
     local wiki_viewer = ChatGPTViewer:new{
         title = wiki_title,
         text = cached.result,
+        on_view_image = image_state.path and function()
+            self_ref:_viewEntityPortrait(image_state.path)
+        end or nil,
         simple_view = true,
         cache_type_name = _("AI Wiki"),
         on_regenerate = function()

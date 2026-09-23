@@ -79,6 +79,21 @@ local direct = EntityMedia.resolve("/books/volume-1.epub", shin_v1, "characters"
 assertTrue(direct.portrait ~= nil, "portrait retrieval")
 assertEqual(direct.portrait.source, "manual", "manual source metadata")
 
+local commons_item = { name = "Silver Key", description = "An ornate key." }
+local commons_source = writeSource("key.jpg", "managed image")
+local commons_ok = EntityMedia.attachLocal("/books/volume-1.epub", commons_item,
+    "lexicon", commons_source, {
+        source = "commons",
+        original = "https://upload.wikimedia.org/wikipedia/commons/a/key.jpg",
+        source_page = "https://commons.wikimedia.org/wiki/File:Key.jpg",
+        license = "CC BY 4.0",
+        artist = "Example Artist",
+    })
+assertTrue(commons_ok, "Commons image attaches to a non-person entry")
+local commons_record = EntityMedia.resolve("/books/volume-1.epub", commons_item, "lexicon")
+assertEqual(commons_record.portrait.license, "CC BY 4.0", "license persists")
+assertEqual(commons_record.portrait.artist, "Example Artist", "artist persists")
+
 local appearance_item = {
     name = "Mira Alvsund",
     aliases = { "Mira" },
@@ -91,6 +106,19 @@ local prompt = EntityMedia.buildPortraitPrompt(appearance_item, "characters",
     { title = "Current Volume" }, { style = "illustrated" })
 assertTrue(prompt:find("dark hair", 1, true) ~= nil, "prompt includes known appearance")
 assertTrue(prompt:find("future appearance", 1, true) == nil, "prompt has no future data")
+
+local place_prompt = EntityMedia.buildPortraitPrompt(
+    { name = "Glass Keep", description = "A tower beside the western lake." },
+    "locations", { title = "Current Volume" })
+assertTrue(place_prompt:find("landscape or architectural scene", 1, true) ~= nil,
+    "location prompt asks for a scene")
+assertTrue(place_prompt:find("clear face", 1, true) == nil,
+    "location prompt does not ask for a character portrait")
+local item_prompt = EntityMedia.buildPortraitPrompt(
+    { name = "Silver Key", description = "An ornate key." },
+    "lexicon", { title = "Current Volume" })
+assertTrue(item_prompt:find("named object or concept", 1, true) ~= nil,
+    "non-person entry prompt asks for an object image")
 
 local inherited = EntityMedia.resolve("/books/volume-3.epub", shin_v3, "characters")
 assertTrue(inherited.inherited, "group portrait inheritance")

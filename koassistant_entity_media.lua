@@ -649,6 +649,9 @@ local function copyPortraitIntoStore(source_path, record, metadata)
         generation_model = metadata and metadata.generation_model,
         prompt = metadata and metadata.prompt,
         original = metadata and metadata.original,
+        source_page = metadata and metadata.source_page,
+        license = metadata and metadata.license,
+        artist = metadata and metadata.artist,
     }
     return destination
 end
@@ -682,7 +685,10 @@ function EntityMedia.attachLocal(file, item, category_key, source_path, opts)
         generation_provider = opts.generation_provider,
         generation_model = opts.generation_model,
         prompt = opts.prompt,
-        original = source_path,
+        original = opts.original or source_path,
+        source_page = opts.source_page,
+        license = opts.license,
+        artist = opts.artist,
     })
     if not destination then return false, err end
     record.hidden = nil
@@ -916,18 +922,27 @@ function EntityMedia.buildPortraitPrompt(item, category_key, book_metadata, opts
     local title = type(book_metadata) == "table" and book_metadata.title or nil
     local style = opts.style or "auto"
     local style_text = style == "auto" and "Choose a suitable restrained visual style for the book" or style
+    local is_person = category_key == "characters" or category_key == "key_figures"
+    local is_place = category_key == "locations"
+    local subject = is_person and "character" or (is_place and "location" or "entity")
+    local composition = is_person
+        and "Single character, clear face, upper-body or bust portrait, neutral simple background, no text, no watermark."
+        or (is_place
+            and "Show the location itself as a clear landscape or architectural scene, without invented people, text, or watermarks."
+            or "Show the named object or concept as a clear visual reference, without invented people, text, or watermarks.")
     local lines = {
-        "Create a spoiler-safe character reference portrait based only on the information below.",
+        "Create a spoiler-safe " .. subject .. " reference image based only on the information below.",
         "Do not invent plot spoilers, future developments, or information not supplied.",
-        "Single character, clear face, upper-body or bust portrait, neutral simple background, no text, no watermark.",
-        "Character: " .. (name ~= "" and name or "unnamed entity"),
+        composition,
+        (is_person and "Character: " or (is_place and "Location: " or "Subject: "))
+            .. (name ~= "" and name or "unnamed entity"),
     }
     if title and title ~= "" then lines[#lines + 1] = "Book: " .. title end
     if #aliases > 0 then lines[#lines + 1] = "Aliases currently known: " .. table.concat(aliases, ", ") end
     if #details > 0 then
         lines[#lines + 1] = table.concat(details, "\n")
     end
-    if not EntityMedia.hasKnownAppearance(item) then
+    if is_person and not EntityMedia.hasKnownAppearance(item) then
         lines[#lines + 1] = "Physical appearance is not established in the supplied information; keep the portrait deliberately non-specific."
     end
     lines[#lines + 1] = "Style: " .. style_text
