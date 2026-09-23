@@ -24,13 +24,11 @@ local ModelLists = {
     },
 
     openai = {
-        -- GPT-5.6 (current generation), tiered by price/perf: sol (flagship) >
-        -- terra (balanced) > luna (cost). Default = terra (balanced), not the priciest.
-        -- All: reasoning opt-in (OFF by default; none..xhigh, NO max), 128K output,
-        -- tools + web search (Responses API), ~1M context, temperature=1.0 only.
-        "gpt-5.6-terra",                -- balanced (default)
-        "gpt-5.6-sol",                  -- flagship (most capable)
-        "gpt-5.6-luna",                 -- cost-optimized
+        -- GPT-6: Sol is the balanced default, Astra is opt-in frontier,
+        -- and Luna is the fast, low-cost tier. All use Responses API for tools.
+        "gpt-6-sol",                    -- balanced (default)
+        "gpt-6-astra",                  -- frontier (most capable)
+        "gpt-6-luna",                   -- cost-optimized
         -- GPT-5.5 (previous flagship; reasons by default at medium, cannot disable)
         "gpt-5.5",
         -- GPT-5.4 (affordable tier)
@@ -178,10 +176,10 @@ local ModelLists = {
         "anthropic/claude-opus-4.8",
         "anthropic/claude-haiku-4.5",
 
-        -- OpenAI (gpt-5.6: sol > terra > luna)
-        "openai/gpt-5.6-sol",
-        "openai/gpt-5.6-terra",
-        "openai/gpt-5.6-luna",
+        -- OpenAI GPT-6 (catalog slugs)
+        "openai/gpt-6-astra",
+        "openai/gpt-6-sol",
+        "openai/gpt-6-luna",
         "openai/gpt-5.5",
         "openai/gpt-5.4",
         "openai/gpt-5.4-mini",
@@ -567,7 +565,7 @@ local ModelLists = {
     -- heuristic only has to cover users who predate that.
     _shipped_defaults = {
         anthropic  = { "claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5-20250929" },
-        openai     = { "gpt-5.6-terra", "gpt-5.5", "gpt-5.4", "gpt-5.2" },
+        openai     = { "gpt-6-sol", "gpt-5.6-terra", "gpt-5.5", "gpt-5.4", "gpt-5.2" },
         openai_codex = { "gpt-5.6-terra", "gpt-5.5", "gpt-5.4" },
         gemini     = { "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3-flash-preview" },
         deepseek   = { "deepseek-v4-pro", "deepseek-chat" },
@@ -604,13 +602,14 @@ local ModelLists = {
         -- Sparse by design: most providers have no frontier-class model.
         frontier = {
             anthropic = "claude-fable-5",
+            openai = "gpt-6-astra",
             gemini = "gemini-3.1-pro-preview",       -- paid-only deep reasoning
         },
 
         -- Provider's most capable general-purpose model
         flagship = {
             anthropic = "claude-opus-5",             -- deep-reasoning flagship; sonnet-5 is the standard tier
-            openai = "gpt-5.6-sol",
+            openai = "gpt-6-sol",
             openai_codex = "gpt-5.6-terra", -- best slug served on ALL plans (sol 400s on free accounts; still pickable manually)
             deepseek = "deepseek-v4-pro",
             gemini = "gemini-3.7-flash",             -- Pro models are paid-only; keep tier free-tier usable (3.7-flash battery-probed on a free key 2026-08-15)
@@ -633,7 +632,7 @@ local ModelLists = {
         -- Balanced performance and cost
         standard = {
             anthropic = "claude-sonnet-5",
-            openai = "gpt-5.6-terra",  -- standard/default
+            openai = "gpt-6-sol",  -- standard/default
             openai_codex = "gpt-5.6-terra",
             deepseek = "deepseek-v4-flash",
             gemini = "gemini-3.7-flash",
@@ -656,7 +655,7 @@ local ModelLists = {
         -- Optimized for speed and lower cost
         fast = {
             anthropic = "claude-haiku-4-5-20251001",
-            openai = "gpt-5.6-luna",
+            openai = "gpt-6-luna",
             openai_codex = "gpt-5.6-luna",
             deepseek = "deepseek-v4-flash",
             gemini = "gemini-3.5-flash-lite",   -- lite = the no-default-thinking class; 3.6-flash here duplicated standard and can't turn thinking off (floor = minimal)

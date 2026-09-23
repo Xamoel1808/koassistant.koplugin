@@ -78,7 +78,7 @@ local TARGET = require("model_constraints").MAX_TOKENS_TARGET
 -- provider, handler module, model with a KNOWN ceiling, that ceiling
 local CASES = {
     { "anthropic",  "koassistant_api.anthropic",         "claude-sonnet-5",          128000 },
-    { "openai",     "koassistant_api.openai",            "gpt-5.6-terra",            128000 },
+    { "openai",     "koassistant_api.openai",            "gpt-6-sol",                128000 },
     { "gemini",     "koassistant_api.gemini",            "gemini-3.6-flash",          65536 },
     { "deepseek",   "koassistant_api.deepseek",          "deepseek-v4-pro",          384000 },
     { "xai",        "koassistant_api.xai",               "grok-4.5",                  32768 },

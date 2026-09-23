@@ -83,9 +83,12 @@ ModelConstraints.capabilities = {
         },
     },
     openai = {
+        -- GPT-6 uses Responses in this plugin, where sampling params are omitted.
+        no_sampling_params = { "gpt-6" },
         -- Models that support reasoning.effort parameter
         -- ("gpt-5" = family fallback, item 19a: new 5.x minors inherit)
         reasoning = {
+            "gpt-6",
             "gpt-5.6",                              -- luna/sol/terra (prefix)
             "gpt-5.5",
             "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
@@ -102,6 +105,7 @@ ModelConstraints.capabilities = {
         -- Function calling for the book-tool workflows (prefix match covers -mini/-nano/-sol/etc.;
         -- "gpt-5" = family fallback).
         tools = {
+            "gpt-6",
             "gpt-5.6", "gpt-5.5", "gpt-5.4",
             "gpt-5",
         },
@@ -112,6 +116,7 @@ ModelConstraints.capabilities = {
         -- _web_search_providers below. Prefix match covers -mini/-nano;
         -- "gpt-5" = family fallback.
         responses_web_search = {
+            "gpt-6",
             "gpt-5.6", "gpt-5.5", "gpt-5.4",
             "gpt-5",
         },
@@ -487,6 +492,7 @@ ModelConstraints._max_output_tokens = {
         ["claude-haiku-4-5"] = 64000,
     },
     openai = {
+        ["gpt-6"] = 128000,              -- all GPT-6 models (OpenAI model catalog)
         ["gpt-5"] = 128000,              -- whole 5.x family incl. 5.4-mini/nano (docs + OpenRouter catalog)
         ["gpt-4.1"] = 32768,             -- documented output cap
         ["gpt-4o"] = 16384,              -- documented output cap (guard for fetched models)
@@ -521,6 +527,7 @@ ModelConstraints._max_output_tokens = {
         ["anthropic/claude-sonnet-4.6"] = 128000,
         ["anthropic/claude-opus-4.8"] = 128000,
         ["anthropic/claude-haiku-4.5"] = 64000,
+        ["openai/gpt-6"] = 128000,       -- GPT-6 Astra/Sol/Luna
         ["openai/gpt-5"] = 128000,       -- prefix: 5.6-sol/terra/luna, 5.5, 5.4, 5.4-mini
         ["openai/gpt-oss"] = 131072,
         ["google/gemini-3"] = 65536,
@@ -640,6 +647,7 @@ ModelConstraints._context_windows = {
         -- input is the load-bearing number. 922,000 stated verbatim on the
         -- 5.6 pages; 5.5/5.4 [inferred] window-minus-output reproduces the
         -- stated max input on every page that carries one.
+        ["gpt-6"]        = 922000,  -- 1,050,000 context minus 128,000 max output
         ["gpt-5.6"]      = 922000,  -- [docs] "Maximum input tokens: 922,000"
         ["gpt-5.5"]      = 922000,  -- [inferred]
         ["gpt-5.4"]      = 922000,  -- [inferred]
@@ -702,6 +710,7 @@ ModelConstraints._context_windows = {
         ["anthropic/claude-sonnet-4.6"] = 1000000,
         ["anthropic/claude-opus-4.8"]   = 1000000,
         ["anthropic/claude-haiku-4.5"]  = 200000,
+        ["openai/gpt-6"]                = 922000,
         ["openai/gpt-5.6"]              = 922000,
         ["openai/gpt-5.5"]              = 922000,
         ["openai/gpt-5.4"]              = 922000,
@@ -920,6 +929,16 @@ ModelConstraints.reasoning_profiles = {
           needs_temp_1 = true },
     },
     openai = {
+        -- GPT-6 defaults to medium reasoning. Astra cannot disable it;
+        -- Sol and Luna support none. All three support max effort.
+        { match = "gpt-6-astra", axis = "effort", default_state = "on",
+          can_disable = false, can_enable = true,
+          options = { "low", "medium", "high", "xhigh", "max" }, default_option = "medium",
+          stance_map = { minimal = { option = "low" }, maximum = { option = "max" } } },
+        { match = "gpt-6", axis = "effort", default_state = "on",
+          can_disable = true, can_enable = true, off_option = "none",
+          options = { "low", "medium", "high", "xhigh", "max" }, default_option = "medium",
+          stance_map = { minimal = { state = "off" }, maximum = { state = "on", option = "max" } } },
         -- GPT-5.6 (luna/sol/terra): gated — reasoning OFF by default (verified 0 reasoning
         -- tokens with nothing sent, 2026-07-24). Opt-in effort none..xhigh (NO max — rejected).
         { match = "gpt-5.6", axis = "effort", default_state = "off",
@@ -2551,6 +2570,9 @@ function ModelConstraints.applyReasoningParams(provider, api_params, decision)
         -- only when `thinking` is present).
     elseif provider == "openai" or provider == "openai_codex" then
         if on then api_params.reasoning = { effort = decision.effort } end
+        if not on and decision.off_option then
+            api_params.reasoning = { effort = decision.off_option }
+        end
     elseif provider == "gemini" then
         if decision.axis == "budget" then
             api_params.thinking_budget = on and (decision.budget or -1) or 0

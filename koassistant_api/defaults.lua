@@ -13,7 +13,7 @@ local function getDefaultModel(provider)
     -- Primary source of truth remains: koassistant_model_lists.lua
     local fallbacks = {
         anthropic = "claude-sonnet-5",
-        openai = "gpt-5.5",
+        openai = "gpt-6-sol",
         deepseek = "deepseek-v4-pro",
         gemini = "gemini-3.5-flash",
         ollama = "llama4",

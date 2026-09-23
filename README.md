@@ -3638,7 +3638,7 @@ The max extraction setting is a safety cap, not a target. The default (4M chars)
 | Gemini 2.5/3 (Pro & Flash) | 1M tokens | ~4M chars — handles any book |
 | Claude (Sonnet 5, Sonnet 4.6) | 1M tokens | ~4M chars — handles any book |
 | Claude (Haiku 4.5) | 200k tokens | ~800k chars — most novels |
-| OpenAI (GPT-5.6 family) | ~1M tokens | ~4M chars |
+| OpenAI (GPT-6 family) | ~1M tokens | ~4M chars |
 | OpenAI (GPT-5.5, GPT-5.4) | 400k tokens | ~1.6M chars |
 | DeepSeek (V4) | 1M tokens | ~4M chars — handles any book |
 | Others (Mistral, Qwen, etc.) | 32k-128k tokens | ~130k-500k chars |
@@ -3710,6 +3710,8 @@ The Reasoning chip in the Quick Settings panel shows the **effective** state for
 | Gemini 3 (3.7/3.6/3.5-flash, 3.1-pro) | Thinks by default | Effort/depth (minimal…high); can't be fully disabled |
 | Gemini 3 flash-lite (3.5, 3.1) | Off by default | Off / effort (minimal…high) |
 | Gemini 2.5-flash | Thinks by default | Off / budget (dynamic…max) |
+| OpenAI GPT-6 Sol/Luna | Reasons by default | Off / effort (low…max, incl. xhigh) |
+| OpenAI GPT-6 Astra | Reasons by default | Effort (low…max, incl. xhigh); can't be fully disabled |
 | OpenAI GPT-5.6 family, GPT-5.4 family | Off by default (gated) | Off / effort (low…xhigh) |
 | OpenAI GPT-5.5 | Reasons by default | Effort (low/medium/high); can't be fully disabled |
 | DeepSeek V4, Z.AI GLM-4.7+, SambaNova DeepSeek-V3.x | Thinks by default | On / Off |
@@ -3992,7 +3994,7 @@ The first model in each provider's list is its default. Current defaults (subjec
 | Provider | Default | Notable alternatives |
 |----------|---------|----------------------|
 | **Anthropic** | `claude-sonnet-5` | `claude-opus-4-8` (most capable / reasoning), `claude-haiku-4-5` (fast), `claude-sonnet-4-6` (1M context) |
-| **OpenAI** | `gpt-5.6-terra` | `gpt-5.6-sol` (most capable), `gpt-5.6-luna` (cost-saver), `gpt-5.5`, `gpt-5.4-mini` |
+| **OpenAI** | `gpt-6-sol` | `gpt-6-astra` (most capable), `gpt-6-luna` (cost-saver), `gpt-5.5`, `gpt-5.4-mini` |
 | **DeepSeek** | `deepseek-v4-pro` | `deepseek-v4-flash` (V4, 1M context, thinking on by default) |
 | **Gemini** | `gemini-3.7-flash` | `gemini-3.6-flash`, `gemini-3.1-pro-preview` (paid only), `gemini-3.5-flash-lite` (ultrafast), `gemini-2.5-flash/pro` (older accounts only) |
 | **Groq** | `openai/gpt-oss-120b` | `openai/gpt-oss-20b` (fast), `groq/compound`, `groq/compound-mini` |

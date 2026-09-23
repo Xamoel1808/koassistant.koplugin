@@ -62,6 +62,17 @@ TestRunner:test("web search on + capable model routes to /responses", function()
     TestRunner:assertTrue(result.body.messages == nil, "body has no messages array")
 end)
 
+TestRunner:test("GPT-6 ordinary chat uses Responses without sampling parameters", function()
+    local result = OpenAIHandler:buildRequestBody(HISTORY, webConfig({
+        model = "gpt-6-sol",
+        features = { enable_web_search = false },
+        api_params = { temperature = 0.7, reasoning = { effort = "max" } },
+    }))
+    TestRunner:assertEqual(result.parser, "openai_responses", "GPT-6 routes to Responses")
+    TestRunner:assertEqual(result.body.temperature, nil, "sampling omitted")
+    TestRunner:assertEqual(result.body.reasoning.effort, "max", "max effort supported")
+end)
+
 TestRunner:test("web search off stays on Chat Completions", function()
     local result = OpenAIHandler:buildRequestBody(HISTORY, webConfig({
         features = { enable_web_search = false },

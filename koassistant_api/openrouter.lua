@@ -89,6 +89,13 @@ function OpenRouterHandler:customizeRequestBody(body, config)
         end
     end
 
+    -- GPT-6 reasons by default; its reasoning modes reject sampling params.
+    -- The shared OpenAI-compatible builder otherwise sends temperature=0.7.
+    if body.model and body.model:match("^openai/gpt%-6") then
+        body.temperature = nil
+        body.top_p = nil
+    end
+
     return body
 end
 

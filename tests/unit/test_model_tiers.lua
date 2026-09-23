@@ -160,12 +160,10 @@ TestRunner.assert(ModelLists.getModelForTier("anthropic", "flagship", false) == 
 TestRunner.assert(ModelLists.getModelForTier("anthropic", "reasoning", true) == "claude-opus-5",
     "reasoning alias resolves to flagship model")
 
--- Fallback only DESCENDS: providers without frontier fall to flagship...
-TestRunner.assert(ModelLists.getModelForTier("openai", "frontier", true) == "gpt-5.6-sol",
-    "openai frontier request falls back to flagship")
--- ...and without fallback a sparse tier returns nil
-TestRunner.assert(ModelLists.getModelForTier("openai", "frontier", false) == nil,
-    "openai has no frontier entry")
+TestRunner.assert(ModelLists.getModelForTier("openai", "frontier", true) == "gpt-6-astra",
+    "openai frontier = gpt-6-astra")
+TestRunner.assert(ModelLists.getModelForTier("openai", "flagship", true) == "gpt-6-sol",
+    "openai flagship = gpt-6-sol")
 -- A flagship request never climbs into frontier
 TestRunner.assert(ModelLists.getModelForTier("anthropic", "flagship", true) ~= "claude-fable-5",
     "flagship request must not climb to frontier")
@@ -278,7 +276,7 @@ TestRunner.assert(ModelOverrides.userTierOverride("anthropic", "ultrafast") == "
 ModelOverrides.setGuiTiers({ anthropic = { ultrafast = "" }, openai = "not-a-table" })
 TestRunner.assert(ModelOverrides.tierOverride("anthropic", "ultrafast") == "claude-haiku-file",
     "empty-string GUI value falls through to the file layer")
-TestRunner.assert(ModelLists.getModelForTier("openai", "fast", false) == "gpt-5.6-luna",
+TestRunner.assert(ModelLists.getModelForTier("openai", "fast", false) == "gpt-6-luna",
     "non-table GUI provider entry is ignored (curated applies)")
 ModelOverrides._setUserForTests(false)
 

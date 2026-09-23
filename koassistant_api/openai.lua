@@ -36,6 +36,9 @@ end
 --- tools / final modes), so _responses_items history entries are only ever
 --- replayed by buildResponsesRequest.
 local function shouldUseResponses(config, model)
+    -- GPT-6 defaults to reasoning, and its tool calls require Responses.
+    -- Route ordinary chat there too so sampling parameters are omitted.
+    if model:match("^gpt%-6") then return true end
     if not ModelConstraints.supportsCapability("openai", model, "responses_web_search") then
         return false
     end
@@ -95,9 +98,8 @@ function OpenAIHandler:buildResponsesRequest(message_history, config, model)
         or ModelConstraints.resolveMaxTokens("openai", model, default_params.max_tokens or 16384)
     request_body.max_output_tokens = ModelConstraints.clampMaxTokens("openai", model, max_tokens)
 
-    -- Temperature is deliberately OMITTED: every model in responses_web_search
-    -- is a gpt-5.x that accepts only its default (the chat path forces 1.0);
-    -- sending nothing yields the same behavior with zero reject risk.
+    -- Temperature is deliberately omitted: reasoning-enabled GPT-6 rejects
+    -- sampling parameters, and the GPT-5 models here use their default.
 
     -- Reasoning effort rides nested on this API (not top-level reasoning_effort)
     if api_params.reasoning and api_params.reasoning.effort then

@@ -109,6 +109,20 @@ print(string.rep("=", 50))
 -- Test: Handler customizeRequestBody() — reasoning parameter injection
 --------------------------------------------------------------------------------
 
+TestRunner:suite("GPT-6 reasoning defaults and off control")
+
+TestRunner:test("Sol disables reasoning explicitly; Astra stays at low", function()
+    local sol = ModelConstraints.resolveReasoning("openai", "gpt-6-sol", { global_stance = "minimal" })
+    local params = {}
+    ModelConstraints.applyReasoningParams("openai", params, sol)
+    TestRunner:assertEqual(params.reasoning.effort, "none", "Sol sends explicit none")
+
+    local astra = ModelConstraints.resolveReasoning("openai", "gpt-6-astra", { global_stance = "minimal" })
+    local astra_params = {}
+    ModelConstraints.applyReasoningParams("openai", astra_params, astra)
+    TestRunner:assertEqual(astra_params.reasoning.effort, "low", "Astra cannot use none")
+end)
+
 TestRunner:suite("DeepSeek thinking injection")
 
 local DeepSeekHandler = require("deepseek")
@@ -137,6 +151,13 @@ end)
 TestRunner:suite("OpenRouter reasoning injection")
 
 local OpenRouterHandler = require("openrouter")
+
+TestRunner:test("OpenRouter GPT-6 omits sampling parameters", function()
+    local body = { model = "openai/gpt-6-luna", temperature = 0.7, top_p = 0.9 }
+    local result = OpenRouterHandler:customizeRequestBody(body, { api_params = {}, features = {} })
+    TestRunner:assertNil(result.temperature, "GPT-6 temperature omitted")
+    TestRunner:assertNil(result.top_p, "GPT-6 top_p omitted")
+end)
 
 TestRunner:test("adds reasoning object when config present", function()
     local body = { model = "anthropic/claude-sonnet-4.5", messages = {} }

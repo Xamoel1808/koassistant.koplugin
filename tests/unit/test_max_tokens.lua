@@ -60,7 +60,7 @@ TestRunner.assert(TARGET == 32768, "MAX_TOKENS_TARGET is 32768")
 local raised = {
     { "anthropic", "claude-sonnet-5" },
     { "anthropic", "claude-fable-5" },
-    { "openai", "gpt-5.6-terra" },
+    { "openai", "gpt-6-sol" },
     { "openai", "gpt-5.4-nano" },
     { "gemini", "gemini-3.6-flash" },
     { "gemini", "gemini-2.5-flash" },
@@ -69,7 +69,7 @@ local raised = {
     { "zai", "glm-5.2" },
     { "openrouter", "anthropic/claude-sonnet-5" },
     { "openrouter", "google/gemini-3.6-flash" },
-    { "openrouter", "openai/gpt-5.6-sol" },
+    { "openrouter", "openai/gpt-6-astra" },
 }
 for _idx, c in ipairs(raised) do
     TestRunner.assert(ModelConstraints.resolveMaxTokens(c[1], c[2], FALLBACK) == TARGET,
