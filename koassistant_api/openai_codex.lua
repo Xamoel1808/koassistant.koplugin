@@ -39,7 +39,7 @@ end
 
 function CodexHandler.buildImageRequest(prompt, model)
     return {
-        model = model or "gpt-5.6-terra",
+        model = model or "gpt-6-sol",
         stream = true,
         store = false,
         input = {
@@ -108,7 +108,7 @@ local function makeCollectedRequest(url, headers, body, response_transform)
 end
 
 function CodexHandler:buildRequestBody(message_history, config)
-    local model = config.model or "gpt-5.6-terra"
+    local model = config.model or "gpt-6-sol"
     local built = self:buildResponsesRequest(message_history, config, model)
     built.url = CODEX_URL
     built.provider = "openai_codex"

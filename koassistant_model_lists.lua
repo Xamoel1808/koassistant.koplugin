@@ -42,15 +42,14 @@ local ModelLists = {
         -- OpenAI ChatGPT subscription (Codex OAuth) reuses the same curated
         -- subscription model slugs as direct OpenAI, but authenticates with
         -- device-code OAuth against ChatGPT's Codex backend.
-        -- Probed live 2026-08-15 on a FREE ChatGPT account: terra/luna/5.5/
-        -- 5.4-mini answer; sol, 5.4 and 5.4-nano are refused there ("not
-        -- supported when using Codex with a ChatGPT account") with a clear
-        -- error. ALL slugs stay listed (paid plans unverified, may serve
-        -- more); default + tier picks use free-served slugs only, so
-        -- auto-selection never 400s (maintainer ruling 2026-08-15).
-        "gpt-5.6-terra",                -- balanced (default; served on free accounts)
-        "gpt-5.6-sol",                  -- flagship (most capable; refused on free accounts)
-        "gpt-5.6-luna",                 -- cost-optimized (served on free accounts)
+        -- GPT-6 availability on the subscription backend has not been
+        -- verified per plan. Legacy 5.6 models remain selectable if needed.
+        "gpt-6-sol",                    -- balanced (default)
+        "gpt-6-astra",                  -- frontier
+        "gpt-6-luna",                   -- fast
+        "gpt-5.6-terra",                -- previous default
+        "gpt-5.6-sol",
+        "gpt-5.6-luna",
         "gpt-5.5",                      -- served on free accounts
         "gpt-5.4",                      -- refused on free accounts
         "gpt-5.4-mini",                 -- served on free accounts
@@ -566,7 +565,7 @@ local ModelLists = {
     _shipped_defaults = {
         anthropic  = { "claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5-20250929" },
         openai     = { "gpt-6-sol", "gpt-5.6-terra", "gpt-5.5", "gpt-5.4", "gpt-5.2" },
-        openai_codex = { "gpt-5.6-terra", "gpt-5.5", "gpt-5.4" },
+        openai_codex = { "gpt-6-sol", "gpt-5.6-terra", "gpt-5.5", "gpt-5.4" },
         gemini     = { "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3-flash-preview" },
         deepseek   = { "deepseek-v4-pro", "deepseek-chat" },
         ollama     = { "llama4", "llama3.3" },
@@ -603,6 +602,7 @@ local ModelLists = {
         frontier = {
             anthropic = "claude-fable-5",
             openai = "gpt-6-astra",
+            openai_codex = "gpt-6-astra",
             gemini = "gemini-3.1-pro-preview",       -- paid-only deep reasoning
         },
 
@@ -610,7 +610,7 @@ local ModelLists = {
         flagship = {
             anthropic = "claude-opus-5",             -- deep-reasoning flagship; sonnet-5 is the standard tier
             openai = "gpt-6-sol",
-            openai_codex = "gpt-5.6-terra", -- best slug served on ALL plans (sol 400s on free accounts; still pickable manually)
+            openai_codex = "gpt-6-sol",
             deepseek = "deepseek-v4-pro",
             gemini = "gemini-3.7-flash",             -- Pro models are paid-only; keep tier free-tier usable (3.7-flash battery-probed on a free key 2026-08-15)
             groq = "openai/gpt-oss-120b",            -- llama picks deprecated by Groq 2026-08-16
@@ -633,7 +633,7 @@ local ModelLists = {
         standard = {
             anthropic = "claude-sonnet-5",
             openai = "gpt-6-sol",  -- standard/default
-            openai_codex = "gpt-5.6-terra",
+            openai_codex = "gpt-6-sol",
             deepseek = "deepseek-v4-flash",
             gemini = "gemini-3.7-flash",
             groq = "openai/gpt-oss-120b",
@@ -656,7 +656,7 @@ local ModelLists = {
         fast = {
             anthropic = "claude-haiku-4-5-20251001",
             openai = "gpt-6-luna",
-            openai_codex = "gpt-5.6-luna",
+            openai_codex = "gpt-6-luna",
             deepseek = "deepseek-v4-flash",
             gemini = "gemini-3.5-flash-lite",   -- lite = the no-default-thinking class; 3.6-flash here duplicated standard and can't turn thinking off (floor = minimal)
             groq = "openai/gpt-oss-20b",        -- 8b-instant deprecated 2026-08-16; gpt-oss-20b is Groq's own replacement (reasons at medium by default — no non-reasoning production model remains)
@@ -896,6 +896,9 @@ ModelLists._image_models = {
     -- /v1/images/generations endpoint.  Keep this list separate so the image
     -- picker never suggests a gpt-image model to the Codex backend.
     openai_codex = {
+        "gpt-6-sol",
+        "gpt-6-astra",
+        "gpt-6-luna",
         "gpt-5.6-terra",
         "gpt-5.6-sol",
         "gpt-5.6-luna",

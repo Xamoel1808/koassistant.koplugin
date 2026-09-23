@@ -56,6 +56,13 @@ TestRunner:test("buildRequestBody targets ChatGPT codex responses endpoint", fun
     TestRunner:assertEqual(result.body.instructions, "You are helpful.", "instructions carried")
 end)
 
+TestRunner:test("Codex request fallback uses GPT-6", function()
+    local request_config = config()
+    request_config.model = nil
+    local result = Handler:buildRequestBody({ { role = "user", content = "hello" } }, request_config)
+    TestRunner:assertEqual(result.body.model, "gpt-6-sol", "GPT-6 fallback")
+end)
+
 TestRunner:test("buildRequestBody uses codex auth headers and account id", function()
     local result = Handler:buildRequestBody({ { role = "user", content = "hello" } }, config())
     TestRunner:assertEqual(result.headers["Authorization"], "Bearer access_token_123", "bearer token")

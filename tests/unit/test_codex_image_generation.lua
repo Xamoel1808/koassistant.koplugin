@@ -36,8 +36,12 @@ local settings = {
 local provider = ImageGenerator.effectiveProvider({}, "openai_codex", settings)
 eq(provider, "openai_codex", "subscription provider needs OAuth, not an API key")
 
-local request = ImageGenerator.buildCodexImageRequest("portrait prompt", "gpt-5.6-terra")
-eq(request.model, "gpt-5.6-terra", "Codex image model")
+local request = ImageGenerator.buildCodexImageRequest("portrait prompt", "gpt-6-sol")
+eq(request.model, "gpt-6-sol", "Codex image model")
+eq(ImageGenerator.buildCodexImageRequest("portrait prompt").model,
+    "gpt-6-sol", "Codex image fallback uses GPT-6")
+eq(ImageGenerator.resolveImageModel("openai_codex", {}),
+    "gpt-6-sol", "Codex image picker defaults to GPT-6")
 eq(request.stream, true, "Codex image stream")
 eq(request.store, false, "Codex image store=false")
 eq(request.tools[1].type, "image_generation", "image tool type")
@@ -59,7 +63,7 @@ local sse = table.concat({
     "",
     "data: " .. json.encode({
         type = "response.completed",
-        response = { status = "completed", output = {}, model = "gpt-5.6-terra" },
+        response = { status = "completed", output = {}, model = "gpt-6-sol" },
     }),
     "",
 }, "\n")
@@ -67,7 +71,7 @@ local parsed, parse_error = ImageGenerator.parseCodexImageSSE(sse)
 ok(parsed and not parse_error, "completed SSE parses")
 eq(parsed.image_data, "IMAGE_BYTES", "image bytes extracted")
 eq(parsed.revised_prompt, "revised", "revised prompt extracted")
-eq(parsed.model, "gpt-5.6-terra", "model metadata extracted")
+eq(parsed.model, "gpt-6-sol", "model metadata extracted")
 
 local split = ImageGenerator.parseCodexImageSSE(
     "data: {\"type\":\"response.output_item.done\",\n"
