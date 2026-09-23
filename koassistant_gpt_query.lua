@@ -166,7 +166,7 @@ end
 ---        re-derived so the plan memo written here and the budget the caller
 ---        sized use one string by construction; a bare config.model is nil on
 ---        four routine routes (audit F3) and lands in the "?" bucket.
-local function handleNonStreamingBackground(background_fn, provider, on_complete, response_parser, config, dispatch_model)
+local function handleNonStreamingBackground(background_fn, provider, on_complete, response_parser, config, dispatch_model, response_decoder)
     local UIManager = require("ui/uimanager")
     local InfoMessage = require("ui/widget/infomessage")
     local BaseHandler = require("koassistant_api.base")
@@ -397,7 +397,13 @@ local function handleNonStreamingBackground(background_fn, provider, on_complete
         end
 
         -- Parse JSON response
-        local parsed, decode_err = decodeResponseBody(full_response)
+        local parsed, decode_err
+        if response_decoder then
+            local ok, result, err = pcall(response_decoder, full_response)
+            parsed, decode_err = ok and result or nil, ok and err or tostring(result)
+        else
+            parsed, decode_err = decodeResponseBody(full_response)
+        end
         if decode_err == "empty" then
             -- Nothing came back at all: the child wrote no body and no error
             -- marker of its own. The length is the whole diagnosis here.
@@ -406,6 +412,11 @@ local function handleNonStreamingBackground(background_fn, provider, on_complete
             finish(false, nil, T(_("Empty response from %1. Please try again."), provider))
             return
         elseif decode_err then
+            if response_decoder then
+                finish(false, nil, ModelConstraints.decorateRequestError(
+                    decode_err, provider, dispatch_model, config))
+                return
+            end
             -- 200 chars stopped inside the HTTP headers, so a 200-with-unparseable-body
             -- (the 2026-08-18 X-Ray case) could not be diagnosed at all. This is a
             -- rare failure path; 2000 buys the start of the body without spamming.
@@ -885,6 +896,7 @@ It is about %1 tokens (an estimate) and your %2 plan allows about %3 tokens a mi
     local stream_reasoning_requested = nil
     local non_streaming_bg_fn = nil
     local response_parser = nil
+    local response_decoder = nil
 
     if type(result) == "function" then
         stream_fn = result
@@ -898,6 +910,7 @@ It is about %1 tokens (an estimate) and your %2 plan allows about %3 tokens a mi
             -- Non-streaming background request
             non_streaming_bg_fn = result._background_fn
             response_parser = result._response_parser
+            response_decoder = result._response_decoder
         end
     end
 
@@ -914,7 +927,8 @@ It is about %1 tokens (an estimate) and your %2 plan allows about %3 tokens a mi
             end,
             response_parser,
             config,
-            dispatch_model
+            dispatch_model,
+            response_decoder
         )
         return STREAMING_IN_PROGRESS
     end
