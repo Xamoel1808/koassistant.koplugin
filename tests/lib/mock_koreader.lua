@@ -135,14 +135,27 @@ if lfs_ok then
 else
     -- Fallback using io.popen for basic directory operations
     local mock_lfs = {
-        attributes = function(path)
+        attributes = function(path, field)
             local handle = io.popen('test -d "' .. path .. '" && echo dir || (test -f "' .. path .. '" && echo file || echo none)')
             if not handle then return nil end
             local result = handle:read("*l")
             handle:close()
-            if result == "dir" then return { mode = "directory" }
-            elseif result == "file" then return { mode = "file" }
-            else return nil end
+            local attr = result == "dir" and { mode = "directory" }
+                or result == "file" and { mode = "file" } or nil
+            if attr and attr.mode == "file" then
+                local file = io.open(path, "rb")
+                if file then attr.size = file:seek("end"); file:close() end
+            end
+            if field then return attr and attr[field] end
+            return attr
+        end,
+        mkdir = function(path)
+            local ok = os.execute('mkdir -p ' .. string.format('%q', path))
+            return ok == true or ok == 0
+        end,
+        rmdir = function(path)
+            local ok = os.execute('rmdir ' .. string.format('%q', path))
+            return ok == true or ok == 0
         end,
         dir = function(path)
             local handle = io.popen('ls -1 "' .. path .. '" 2>/dev/null')

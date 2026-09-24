@@ -229,6 +229,20 @@ EntityMedia.updateForMove("/books/volume-1.epub", "/books/renamed.epub", false)
 local moved = EntityMedia.resolve("/books/renamed.epub", { name = "Mira Alvsund" }, "characters")
 assertTrue(moved.portrait ~= nil, "book-local portrait survives a book move")
 
+-- These two paths collide under the store's legacy hash. Their local records
+-- must still remain independent, including when one book moves.
+local same_name = { name = "Collision Hero" }
+assertTrue(EntityMedia.attachLocal("/books/volume-1.epub", same_name,
+    "characters", source, { scope = "book" }))
+assertTrue(EntityMedia.attachLocal("/books/volume-3.epub", same_name,
+    "characters", override_source, { scope = "book" }))
+local other = EntityMedia.resolve("/books/volume-3.epub", same_name, "characters")
+EntityMedia.updateForMove("/books/volume-1.epub", "/books/second-name.epub", false)
+assertTrue(EntityMedia.resolve("/books/second-name.epub", same_name, "characters").portrait,
+    "moved book keeps its portrait")
+assertTrue(EntityMedia.resolve("/books/volume-3.epub", same_name, "characters").path == other.path,
+    "moving one colliding book leaves the other untouched")
+
 EntityMedia._resetForTests()
 package.loaded["luasettings"] = previous_settings
 os.execute('rm -rf "' .. root .. '"')

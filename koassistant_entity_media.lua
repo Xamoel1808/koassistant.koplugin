@@ -41,11 +41,7 @@ local function rootPath()
 end
 
 local function fileMode(path)
-    local value = lfs.attributes(path, "mode")
-    -- The test fallback returns the complete attribute table even when the
-    -- second argument is ignored; real LuaFileSystem returns the string.
-    if type(value) == "table" then return value.mode end
-    return value
+    return lfs.attributes(path, "mode")
 end
 
 local function imageRoot()
@@ -293,12 +289,13 @@ local function recordsInScope(store, scope)
     return bucket
 end
 
-local function matchingRecords(store, scope, handles, family)
+local function matchingRecords(store, scope, handles, family, file)
     local out = {}
     local bucket = store.records[scope]
     if type(bucket) ~= "table" then return out end
     for _, record in pairs(bucket) do
-        if recordMatches(record, handles, family) then out[#out + 1] = record end
+        if (not file or record.source_file == file)
+            and recordMatches(record, handles, family) then out[#out + 1] = record end
     end
     table.sort(out, function(a, b) return tostring(a.id) < tostring(b.id) end)
     return out
@@ -316,7 +313,8 @@ end
 local function ensureRecord(store, scope, item, category_key, file, force_new)
     local handles = identityHandles(item, category_key)
     local family = categoryFamily(category_key)
-    local matches = matchingRecords(store, scope, handles, family)
+    local matches = matchingRecords(store, scope, handles, family,
+        scope:sub(1, 5) == "book:" and file or nil)
     if #matches == 1 and not force_new then
         local record = matches[1]
         local seen = handleSet(recordHandles(record))
@@ -448,7 +446,9 @@ local function findGroupCandidates(store, scope, local_handles, family, remote_h
             local bucket = store.records[candidate_scope]
             if type(bucket) == "table" then
                 for _, record in pairs(bucket) do
-                    if recordMatches(record, remote_handles, family)
+                    if (candidate_scope:sub(1, 5) ~= "book:"
+                        or record.source_file == hit.file)
+                        and recordMatches(record, remote_handles, family)
                         and safeGroupMatch(local_handles, hit.item, hit.category_key, record) then
                         add(record, hit, candidate_scope)
                     end
@@ -519,7 +519,7 @@ function EntityMedia.resolve(file, item, category_key, opts)
     local handles = identityHandles(item, category_key)
     local family = categoryFamily(category_key)
     local book_scope = bookKey(file)
-    local direct = matchingRecords(store, book_scope, handles, family)
+    local direct = matchingRecords(store, book_scope, handles, family, file)
     if #direct > 1 then
         return { ambiguous = true, conflicts = direct, handles = handles, scope = book_scope }
     end
@@ -793,28 +793,22 @@ function EntityMedia.updateForMove(old_path, new_path, copy)
     local changed = false
     local old_key = bookKey(old_path)
     local new_key = new_path and bookKey(new_path) or nil
-    if store.records[old_key] then
-        if new_key then
-            if store.records[new_key] then
-                -- Keep both records if a destination already exists; this is a
-                -- user-data conflict, never silently overwrite it.
-                for id, record in pairs(store.records[old_key]) do
+    local old_bucket = store.records[old_key]
+    if old_bucket then
+        for id, record in pairs(old_bucket) do
+            if record.source_file == old_path and new_key ~= old_key then
+                old_bucket[id] = nil
+                if new_key then
+                    local target = recordsInScope(store, new_key)
                     local new_id = id
-                    while store.records[new_key][new_id] do new_id = new_id .. "_moved" end
-                    record.scope = new_key
-                    store.records[new_key][new_id] = record
+                    while target[new_id] do new_id = new_id .. "_moved" end
+                    record.id, record.scope = new_id, new_key
+                    target[new_id] = record
                 end
-            else
-                store.records[new_key] = store.records[old_key]
-                for _, record in pairs(store.records[new_key]) do record.scope = new_key end
+                changed = true
             end
-            store.records[old_key] = nil
-        else
-            -- Keep the files and group-level media, but remove a stale local
-            -- book scope.  The managed image is intentionally not deleted.
-            store.records[old_key] = nil
         end
-        changed = true
+        if not next(old_bucket) then store.records[old_key] = nil end
     end
     for _, records in pairs(store.records) do
         for _, record in pairs(type(records) == "table" and records or {}) do

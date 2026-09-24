@@ -11,7 +11,7 @@ Run: lua tests/run_tests.lua --unit
 package.path = package.path .. ";./?.lua;./?/init.lua"
 require("tests.lib.mock_koreader")
 
-local lfs = require("lfs")
+local lfs = require("libs/libkoreader-lfs")
 local UpdateChecker = require("koassistant_update_checker")
 local Registry = require("koassistant_storage_registry")
 

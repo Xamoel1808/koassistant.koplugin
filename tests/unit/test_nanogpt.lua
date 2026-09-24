@@ -115,4 +115,4 @@ TestRunner:test("Native NanoGPT selection outside old list uses the custom defau
     assert(features.model == "xiaomi/mimo-v2.6-flash")
 end)
 
-assert(TestRunner:summary())
+return TestRunner:summary()
