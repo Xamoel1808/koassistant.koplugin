@@ -12,6 +12,7 @@ local TestRunner = require("test_runner"):new()
 
 TestRunner:test("NanoGPT is a native provider with current model IDs", function()
     assert(Lists.nanogpt[1] == "z-ai/glm-5.3-flash")
+    assert(Lists.nanogpt[3] == "xiaomi/mimo-v2.6-flash")
     assert(Lists.deepseek[2] == "deepseek-flash")
     assert(Constraints.supportsCapability("nanogpt", Lists.nanogpt[1], "tools"))
     assert(Constraints.supportsWebSearch("nanogpt", Lists.nanogpt[1]))

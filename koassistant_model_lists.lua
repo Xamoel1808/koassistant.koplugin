@@ -52,9 +52,11 @@ local ModelLists = {
     },
 
     nanogpt = {
-        -- Live NanoGPT catalog IDs (2026-09-24). Fetch models for newer IDs.
+        -- Curated NanoGPT IDs. The public /models API can omit a callable model,
+        -- so verify new IDs with a chat completion before removing them.
         "z-ai/glm-5.3-flash",
         "minimax/minimax-m2.7",
+        "xiaomi/mimo-v2.6-flash",
         "xiaomi/mimo-v2.5",
         "xiaomi/mimo-v2.5-pro",
         "deepseek/deepseek-v4.1-flash",
