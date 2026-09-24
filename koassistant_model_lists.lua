@@ -729,7 +729,7 @@ local ModelLists = {
             docs = "https://api-docs.deepseek.com/quick_start/pricing",
         },
         nanogpt = {
-            api_list = "https://api.nano-gpt.com/api/v1/models",
+            api_list = "https://nano-gpt.com/api/v1/models",
             docs = "https://docs.nano-gpt.com/api-reference/endpoint/chat-completion",
         },
         gemini = {

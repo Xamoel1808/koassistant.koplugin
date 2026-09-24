@@ -32,7 +32,7 @@ TestRunner:test("Book Tools use function calls without web search", function()
             parameters = { type = "object", properties = {} },
         } } },
     })
-    assert(result.url == "https://api.nano-gpt.com/api/v1/chat/completions")
+    assert(result.url == "https://nano-gpt.com/api/v1/chat/completions")
     assert(result.body.tool_choice == "required")
     assert(result.body.tools[1]["function"].name == "search_book")
     assert(result.body.webSearch == nil)
