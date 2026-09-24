@@ -52,15 +52,13 @@ local ModelLists = {
     },
 
     nanogpt = {
-        -- Curated NanoGPT IDs. The public /models API can omit a callable model,
-        -- so verify new IDs with a chat completion before removing them.
-        "z-ai/glm-5.3-flash",
-        "minimax/minimax-m2.7",
+        -- Models from the owner's former custom NanoGPT provider.
+        "xiaomi/mimo-v2.6-pro",
         "xiaomi/mimo-v2.6-flash",
-        "xiaomi/mimo-v2.5",
-        "xiaomi/mimo-v2.5-pro",
-        "deepseek/deepseek-v4.1-flash",
+        "z-ai/glm-5.3-flash",
         "google/gemini-3.5-flash-lite",
+        "google/gemini-3.8-flash",
+        "minimax/minimax-m3",
     },
 
     gemini = {
@@ -569,7 +567,7 @@ local ModelLists = {
         openai_codex = { "gpt-6-sol", "gpt-5.6-terra", "gpt-5.5", "gpt-5.4" },
         gemini     = { "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3-flash-preview" },
         deepseek   = { "deepseek-v4-pro", "deepseek-chat" },
-        nanogpt    = { "z-ai/glm-5.3-flash" },
+        nanogpt    = { "xiaomi/mimo-v2.6-pro" },
         ollama     = { "llama4", "llama3.3" },
         groq       = { "openai/gpt-oss-120b", "llama-3.3-70b-versatile" },
         mistral    = { "mistral-large-latest" },
@@ -613,7 +611,7 @@ local ModelLists = {
             openai = "gpt-6-sol",
             openai_codex = "gpt-6-sol",
             deepseek = "deepseek-v4-pro",
-            nanogpt = "deepseek/deepseek-v4.1-flash",
+            nanogpt = "xiaomi/mimo-v2.6-pro",
             gemini = "gemini-3.7-flash",             -- Pro models are paid-only; keep tier free-tier usable (3.7-flash battery-probed on a free key 2026-08-15)
             groq = "openai/gpt-oss-120b",            -- llama picks deprecated by Groq 2026-08-16
             mistral = "mistral-large-latest",
@@ -637,7 +635,7 @@ local ModelLists = {
             openai = "gpt-6-sol",  -- standard/default
             openai_codex = "gpt-6-sol",
             deepseek = "deepseek-flash",
-            nanogpt = "z-ai/glm-5.3-flash",
+            nanogpt = "xiaomi/mimo-v2.6-pro",
             gemini = "gemini-3.7-flash",
             groq = "openai/gpt-oss-120b",
             mistral = "mistral-medium-latest",
@@ -661,7 +659,7 @@ local ModelLists = {
             openai = "gpt-6-luna",
             openai_codex = "gpt-6-luna",
             deepseek = "deepseek-flash",
-            nanogpt = "xiaomi/mimo-v2.5",
+            nanogpt = "xiaomi/mimo-v2.6-flash",
             gemini = "gemini-3.5-flash-lite",   -- fastest Gemini 3.x choice; thinking defaults to minimal
             groq = "openai/gpt-oss-20b",        -- 8b-instant deprecated 2026-08-16; gpt-oss-20b is Groq's own replacement (reasons at medium by default — no non-reasoning production model remains)
             mistral = "ministral-14b-latest",
@@ -685,7 +683,7 @@ local ModelLists = {
             openai = "gpt-5.4-nano",
             openai_codex = "gpt-6-luna",
             deepseek = "deepseek-flash",
-            nanogpt = "xiaomi/mimo-v2.5",
+            nanogpt = "xiaomi/mimo-v2.6-flash",
             gemini = "gemini-3.5-flash-lite",
             groq = "openai/gpt-oss-20b",            -- see fast-tier note: Groq retired every non-reasoning production model 2026-08-16
             mistral = "ministral-3b-latest",

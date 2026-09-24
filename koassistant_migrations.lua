@@ -63,6 +63,65 @@ function Migrations.run(features)
     end
   end
 
+  -- Replace the owner's old custom NanoGPT entry with the native provider.
+  -- Copy its exact model choices and tier/default preferences before removing
+  -- the duplicate. This runs once because the custom provider is then gone.
+  for i, provider in ipairs(features.custom_providers or {}) do
+    local host = type(provider.base_url) == "string"
+      and provider.base_url:match("^https?://([^/:]+)") or nil
+    if provider.id == "custom_nanogpt"
+        and (host == "api.nano-gpt.com" or host == "nano-gpt.com") then
+      local old_models = features.custom_models and features.custom_models.custom_nanogpt or {}
+      local allowed = {}
+      local copied_models = {}
+      for _, model in ipairs(old_models) do
+        if type(model) == "string" and not allowed[model] then
+          allowed[model] = true
+          copied_models[#copied_models + 1] = model
+        end
+      end
+      features.custom_models = features.custom_models or {}
+      features.custom_models.nanogpt = copied_models
+      features.custom_models.custom_nanogpt = nil
+
+      local old_default = features.provider_default_models
+        and features.provider_default_models.custom_nanogpt
+      if type(old_default) == "string" and allowed[old_default] then
+        features.provider_default_models.nanogpt = old_default
+      end
+      if features.provider_default_models then
+        features.provider_default_models.custom_nanogpt = nil
+      end
+      if features.tier_overrides and features.tier_overrides.custom_nanogpt then
+        features.tier_overrides.nanogpt = features.tier_overrides.custom_nanogpt
+        features.tier_overrides.custom_nanogpt = nil
+      end
+      if features.model_explicit then
+        if features.provider == "custom_nanogpt" then
+          features.model_explicit.nanogpt = features.model_explicit.custom_nanogpt
+            or features.model_explicit.nanogpt
+        end
+        features.model_explicit.custom_nanogpt = nil
+      end
+
+      if features.provider == "custom_nanogpt" then
+        features.provider = "nanogpt"
+      end
+      if features.provider == "nanogpt" and #copied_models > 0
+          and not allowed[features.model] then
+        features.model = (type(old_default) == "string" and allowed[old_default])
+          and old_default or copied_models[1]
+        features.model_explicit = features.model_explicit or {}
+        features.model_explicit.nanogpt = true
+      end
+
+      if features.api_keys then features.api_keys.custom_nanogpt = nil end
+      table.remove(features.custom_providers, i)
+      needs_save = true
+      break
+    end
+  end
+
   -- (show_debug_in_chat is deliberately NOT backfilled — nil reads as "off"
   -- everywhere it is consumed, and writing false here re-materialized the key for
   -- every user on every launch, defeating read-through. Defaults sweep D3.)

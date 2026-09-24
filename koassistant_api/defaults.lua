@@ -97,7 +97,7 @@ local ProviderDefaults = {
     },
     nanogpt = {
         provider = "nanogpt",
-        model = getDefaultModel("nanogpt"),
+        model = "xiaomi/mimo-v2.6-flash",
         base_url = "https://api.nano-gpt.com/api/v1/chat/completions",
         additional_parameters = {
             temperature = 0.7,
