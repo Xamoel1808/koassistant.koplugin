@@ -2842,7 +2842,7 @@ local SettingsSchema = {
                             id = "enable_web_search",
                             type = "toggle",
                             text = _("Enable Web Search"),
-                            help_text = T(_("Allow AI to search the web for current information.\n\nSupported providers: %1.\n\nGemini supports it only on Search-grounding-capable models; OpenAI on GPT-5 models and xAI on Grok-4 models (via their Responses APIs); OpenRouter works for any model via the :online suffix.\n\nPerplexity searches BY DEFAULT (its native behavior) — the Web toggle can now actually turn it off per chat or per book.\n\nOther providers currently ignore this setting.\n\nThis is a global default: per-request toggles (input dialog, chat viewer) adapt to the active provider.\n\nIncreases token usage/cost."),
+                            help_text = T(_("Allow AI to search the web for current information.\n\nSupported providers: %1.\n\nGemini supports it only on Search-grounding-capable models; OpenAI on GPT-5 models and xAI on Grok-4 models (via their Responses APIs); OpenRouter works for any model via the :online suffix. NanoGPT uses its webSearch option.\n\nPerplexity searches BY DEFAULT (its native behavior) — the Web toggle can now actually turn it off per chat or per book.\n\nOther providers currently ignore this setting.\n\nThis is a global default: per-request toggles (input dialog, chat viewer) adapt to the active provider.\n\nIncreases token usage/cost."),
                                 ModelConstraints.getWebSearchProvidersLabel())
                                 -- Appended as its own sentence rather than folded into the
                                 -- string above so the existing translations survive. Field
@@ -2866,7 +2866,7 @@ local SettingsSchema = {
                                 }
                                 return T(_("Web Search Effort: %1"), labels[effort] or effort)
                             end,
-                            help_text = _("How much web searching the AI may do per question.\n\nLight: fewest searches, fastest and cheapest.\nStandard: balanced (provider defaults).\nThorough: most searches and context, slower and costlier.\n\nApplies where the provider offers control: Anthropic (up to 2/5/10 searches), OpenAI and Perplexity (search context size), OpenRouter (3/5/10 results), Z.AI (result count and snippet size). Gemini and xAI decide automatically."),
+                            help_text = _("How much web searching the AI may do per question.\n\nLight: fewest searches, fastest and cheapest.\nStandard: balanced (provider defaults).\nThorough: most searches and context, slower and costlier.\n\nApplies where the provider offers control: Anthropic (up to 2/5/10 searches), OpenAI and Perplexity (search context size), OpenRouter (3/5/10 results), NanoGPT (standard/deep search), Z.AI (result count and snippet size). Gemini and xAI decide automatically."),
                             path = "features.web_search_effort",
                             default = "standard",
                             options = {

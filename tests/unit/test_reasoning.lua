@@ -955,9 +955,23 @@ TestRunner:test("Sonar split: only sonar-reasoning reasons on openrouter/request
     end
 end)
 
-TestRunner:test("Gemini flash-lite gated off by default (probed 2026-07-25)", function()
-    -- Bare math prompt: thoughtsTokenCount=0 on both lites vs 729 on 3.5-flash.
-    for _i, id in ipairs({ "gemini-3.5-flash-lite", "gemini-3.1-flash-lite" }) do
+TestRunner:test("Gemini 3.5 flash-lite thinks at minimal by default", function()
+    local p = ModelConstraints.getReasoningProfile("gemini", "gemini-3.5-flash-lite")
+    TestRunner:assertEqual(p.default_state, "on", "3.5 flash-lite default on")
+    TestRunner:assertEqual(p.default_option, "minimal", "3.5 flash-lite default minimal")
+    local d = ModelConstraints.resolveReasoning("gemini", "gemini-3.5-flash-lite",
+        { global_stance = "minimal" })
+    TestRunner:assertEqual(d.effort, "minimal", "minimal stance")
+    local params = {}
+    ModelConstraints.applyReasoningParams("gemini", params, d)
+    TestRunner:assertEqual(params.thinking_level, "minimal", "thinkingLevel sent")
+    d = ModelConstraints.resolveReasoning("gemini", "gemini-3.5-flash-lite",
+        { global_stance = "maximum" })
+    TestRunner:assertEqual(d.effort, "high", "maximum stance")
+end)
+
+TestRunner:test("Gemini 3.1 flash-lite remains off by default", function()
+    for _i, id in ipairs({ "gemini-3.1-flash-lite" }) do
         local p = ModelConstraints.getReasoningProfile("gemini", id)
         TestRunner:assertEqual(p.default_state, "off", id .. ": default off")
         local d = ModelConstraints.resolveReasoning("gemini", id, { global_stance = "minimal" })
@@ -968,9 +982,6 @@ TestRunner:test("Gemini flash-lite gated off by default (probed 2026-07-25)", fu
         d = ModelConstraints.resolveReasoning("gemini", id, { global_stance = "maximum" })
         TestRunner:assertEqual(d.effort, "high", id .. ": maximum -> high")
     end
-    TestRunner:assertEqual(
-        ModelConstraints.getReasoningProfile("gemini", "gemini-3.5-flash").default_state,
-        "on", "3.5-flash itself still thinks by default")
 end)
 
 TestRunner:test("Minimal on Gemini 2.5 -> thinking_budget 0", function()

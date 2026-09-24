@@ -33,6 +33,36 @@ local Migrations = {}
 function Migrations.run(features)
   local needs_save = false
 
+  -- Keep an existing NanoGPT custom provider usable while making the native
+  -- entry ready to select. Copy only credentials aimed at NanoGPT's own host;
+  -- leave the custom provider, its model, and the active selection untouched.
+  if not (features.api_keys and features.api_keys.nanogpt) then
+    for _, provider in ipairs(features.custom_providers or {}) do
+      local host = type(provider.base_url) == "string"
+        and provider.base_url:match("^https?://([^/:]+)") or nil
+      if (host == "api.nano-gpt.com" or host == "nano-gpt.com")
+          and provider.id and features.api_keys and features.api_keys[provider.id] then
+        local keys = features.api_keys[provider.id]
+        if type(keys) == "table" then
+          local copy = {}
+          for i, entry in ipairs(keys) do
+            if type(entry) == "table" then
+              local item = {}
+              for k, v in pairs(entry) do item[k] = v end
+              copy[i] = item
+            else
+              copy[i] = entry
+            end
+          end
+          keys = copy
+        end
+        features.api_keys.nanogpt = keys
+        needs_save = true
+        break
+      end
+    end
+  end
+
   -- (show_debug_in_chat is deliberately NOT backfilled — nil reads as "off"
   -- everywhere it is consumed, and writing false here re-materialized the key for
   -- every user on every launch, defeating read-through. Defaults sweep D3.)

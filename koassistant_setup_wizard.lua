@@ -59,6 +59,7 @@ SetupWizard.PROVIDER_CHOICES = {
     { id = "mistral",    name = "Mistral" },
     { id = "xai",        name = "xAI (Grok)" },
     { id = "openrouter", name = "OpenRouter" },
+    { id = "nanogpt",    name = "NanoGPT" },
     { id = "zai",        name = "Z.AI" },
     { id = "perplexity", name = "Perplexity" },
     { id = "ollama",     name = "Ollama (local)" },

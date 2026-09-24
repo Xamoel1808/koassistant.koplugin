@@ -48,7 +48,17 @@ local ModelLists = {
     deepseek = {
         -- DeepSeek V4 (current generation, 1M context, thinking on by default)
         "deepseek-v4-pro",              -- flagship (default) + reasoning
-        "deepseek-v4-flash",            -- standard/fast
+        "deepseek-flash",               -- DeepSeek V4.1 Flash (official API ID)
+    },
+
+    nanogpt = {
+        -- Live NanoGPT catalog IDs (2026-09-24). Fetch models for newer IDs.
+        "z-ai/glm-5.3-flash",
+        "minimax/minimax-m2.7",
+        "xiaomi/mimo-v2.5",
+        "xiaomi/mimo-v2.5-pro",
+        "deepseek/deepseek-v4.1-flash",
+        "google/gemini-3.5-flash-lite",
     },
 
     gemini = {
@@ -557,6 +567,7 @@ local ModelLists = {
         openai_codex = { "gpt-6-sol", "gpt-5.6-terra", "gpt-5.5", "gpt-5.4" },
         gemini     = { "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3-flash-preview" },
         deepseek   = { "deepseek-v4-pro", "deepseek-chat" },
+        nanogpt    = { "z-ai/glm-5.3-flash" },
         ollama     = { "llama4", "llama3.3" },
         groq       = { "openai/gpt-oss-120b", "llama-3.3-70b-versatile" },
         mistral    = { "mistral-large-latest" },
@@ -600,6 +611,7 @@ local ModelLists = {
             openai = "gpt-6-sol",
             openai_codex = "gpt-6-sol",
             deepseek = "deepseek-v4-pro",
+            nanogpt = "deepseek/deepseek-v4.1-flash",
             gemini = "gemini-3.7-flash",             -- Pro models are paid-only; keep tier free-tier usable (3.7-flash battery-probed on a free key 2026-08-15)
             groq = "openai/gpt-oss-120b",            -- llama picks deprecated by Groq 2026-08-16
             mistral = "mistral-large-latest",
@@ -622,7 +634,8 @@ local ModelLists = {
             anthropic = "claude-sonnet-5",
             openai = "gpt-6-sol",  -- standard/default
             openai_codex = "gpt-6-sol",
-            deepseek = "deepseek-v4-flash",
+            deepseek = "deepseek-flash",
+            nanogpt = "z-ai/glm-5.3-flash",
             gemini = "gemini-3.7-flash",
             groq = "openai/gpt-oss-120b",
             mistral = "mistral-medium-latest",
@@ -645,8 +658,9 @@ local ModelLists = {
             anthropic = "claude-haiku-4-5-20251001",
             openai = "gpt-6-luna",
             openai_codex = "gpt-6-luna",
-            deepseek = "deepseek-v4-flash",
-            gemini = "gemini-3.5-flash-lite",   -- lite = the no-default-thinking class; 3.6-flash here duplicated standard and can't turn thinking off (floor = minimal)
+            deepseek = "deepseek-flash",
+            nanogpt = "xiaomi/mimo-v2.5",
+            gemini = "gemini-3.5-flash-lite",   -- fastest Gemini 3.x choice; thinking defaults to minimal
             groq = "openai/gpt-oss-20b",        -- 8b-instant deprecated 2026-08-16; gpt-oss-20b is Groq's own replacement (reasons at medium by default — no non-reasoning production model remains)
             mistral = "ministral-14b-latest",
             xai = "grok-4.20-0309-non-reasoning",
@@ -668,7 +682,8 @@ local ModelLists = {
             anthropic = "claude-haiku-4-5-20251001",
             openai = "gpt-5.4-nano",
             openai_codex = "gpt-6-luna",
-            deepseek = "deepseek-v4-flash",
+            deepseek = "deepseek-flash",
+            nanogpt = "xiaomi/mimo-v2.5",
             gemini = "gemini-3.5-flash-lite",
             groq = "openai/gpt-oss-20b",            -- see fast-tier note: Groq retired every non-reasoning production model 2026-08-16
             mistral = "ministral-3b-latest",
@@ -712,6 +727,10 @@ local ModelLists = {
         deepseek = {
             api_list = "https://api.deepseek.com/v1/models",
             docs = "https://api-docs.deepseek.com/quick_start/pricing",
+        },
+        nanogpt = {
+            api_list = "https://api.nano-gpt.com/api/v1/models",
+            docs = "https://docs.nano-gpt.com/api-reference/endpoint/chat-completion",
         },
         gemini = {
             api_list = "https://generativelanguage.googleapis.com/v1beta/models",

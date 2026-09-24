@@ -3025,6 +3025,7 @@ function AskGPT:getProviderDisplayName(provider_id)
     vercel = "Vercel AI Gateway",
     opencode = "OpenCode Zen",
     opencode_go = "OpenCode Go",
+    nanogpt = "NanoGPT",
   }
   if special[provider_id] then return special[provider_id] end
   -- Built-in provider: capitalize first letter
@@ -4094,6 +4095,9 @@ function AskGPT:buildModelMenu(simplified, provider_override)
   -- Helper to build display name with default indicators
   local function buildDisplayName(model, is_custom)
     local display_name = model
+    if provider == "deepseek" and model == "deepseek-flash" then
+      display_name = "DeepSeek V4.1 Flash (deepseek-flash)"
+    end
     if is_custom then
       display_name = "★ " .. display_name
     end
@@ -20087,7 +20091,7 @@ function AskGPT:showAbout()
 An AI companion for KOReader. Chat about your books, highlights and library, translate and look things up, and build book artifacts (X-Ray, summaries, quizzes, recaps) with per-book settings, spoiler protection, and your choice of AI provider.
 
 Project page, guides and updates:
-github.com/zeeyado/koassistant.koplugin
+github.com/Xamoel1808/koassistant.koplugin
 
 Gestures: assign KOAssistant actions in Settings → Taps and gestures → Gesture manager.]]), version),
   })

@@ -181,6 +181,16 @@ ModelConstraints.capabilities = {
             "glm-4.7", "glm-4.7-flash",
         },
     },
+    nanogpt = {
+        -- NanoGPT chat completions accepts OpenAI-shaped function tools. Curated
+        -- families are granted book tools; fetched models can be granted via
+        -- custom_models.lua after a provider test.
+        tools = {
+            "z-ai/glm-5.3-flash", "minimax/minimax-m2.7",
+            "xiaomi/mimo-v2.", "deepseek/deepseek-v4.1-flash",
+            "google/gemini-3.5-flash-lite",
+        },
+    },
     openrouter = {
         -- Unified reasoning object works for all backend models
         -- OpenRouter auto-translates effort to each provider's native format
@@ -499,6 +509,7 @@ ModelConstraints._max_output_tokens = {
     },
     deepseek = {
         ["deepseek-v4-pro"] = 384000,    -- documented (1M ctx / 384K out)
+        ["deepseek-flash"] = 384000,     -- V4.1 Flash, official API ID
         ["deepseek-v4-flash"] = 131072,  -- OpenRouter catalog 2026-08-06
     },
     gemini = {
@@ -660,6 +671,7 @@ ModelConstraints._context_windows = {
     -- openai_codex aliased below (same hosted models, same slugs)
     deepseek = {
         ["deepseek-v4"] = 1000000,  -- [docs] pricing table: 1M for v4-pro AND v4-flash; [OR] 1048576
+        ["deepseek-flash"] = 1000000,
     },
     gemini = {
         ["gemini-3"]   = 1048576,   -- [probe] models-endpoint inputTokenLimit, all curated 3.x ids
@@ -970,6 +982,9 @@ ModelConstraints.reasoning_profiles = {
         { match = "deepseek-v4-flash", axis = "binary", default_state = "on",
           can_disable = true, can_enable = true,
           stance_map = { minimal = { state = "off" }, maximum = { state = "on" } } },
+        { match = "deepseek-flash", axis = "binary", default_state = "on",
+          can_disable = true, can_enable = true,
+          stance_map = { minimal = { state = "off" }, maximum = { state = "on" } } },
         -- FAMILY FALLBACK (item 19a): the binary thinking toggle is universal since V3.2.
         { match = "deepseek", axis = "binary", default_state = "on",
           can_disable = true, can_enable = true,
@@ -992,18 +1007,16 @@ ModelConstraints.reasoning_profiles = {
         -- gemini-3.6-flash mirrors the 3.5-flash effort profile.
         -- flash-lite MUST precede gemini-3.5-flash (prefix match: "gemini-3.5-flash" would
         -- otherwise swallow "gemini-3.5-flash-lite").
-        -- flash-lite variants do NOT think by default (probed 2026-07-25 via model_audit:
-        -- bare math prompt → thoughtsTokenCount=0 on 3.5-flash-lite AND 3.1-flash-lite,
-        -- vs 729 on 3.5-flash — the earlier "mirrors flash exactly" note was wrong about
-        -- the default). Effort levels still work; gated shape like gpt-5.6.
+        -- Google's current model table says 3.5-flash-lite defaults to minimal
+        -- thinking; 3.1-flash-lite remains off by default.
         { match = "gemini-3.6-flash", axis = "effort", default_state = "on",
           can_disable = false, can_enable = true,
           options = { "minimal", "low", "medium", "high" }, default_option = "high",
           stance_map = { minimal = { option = "minimal" }, maximum = { option = "high" } } },
-        { match = "gemini-3.5-flash-lite", axis = "effort", default_state = "off",
-          can_disable = true, can_enable = true,
-          options = { "minimal", "low", "medium", "high" }, default_option = "high",
-          stance_map = { minimal = { state = "off" }, maximum = { state = "on", option = "high" } } },
+        { match = "gemini-3.5-flash-lite", axis = "effort", default_state = "on",
+          can_disable = false, can_enable = true,
+          options = { "minimal", "low", "medium", "high" }, default_option = "minimal",
+          stance_map = { minimal = { option = "minimal" }, maximum = { option = "high" } } },
         { match = "gemini-3.5-flash", axis = "effort", default_state = "on",
           can_disable = false, can_enable = true,
           options = { "minimal", "low", "medium", "high" }, default_option = "high",
@@ -1103,6 +1116,14 @@ ModelConstraints.reasoning_profiles = {
         { match = "", generic = true, axis = "effort", default_state = "off", can_disable = true, can_enable = true,
           options = { "low", "medium", "high" }, default_option = "high",
           stance_map = { minimal = { state = "off" }, maximum = { state = "on", option = "high" } } },
+    },
+    nanogpt = {
+        -- This model supports an effort dial through NanoGPT. MiMo models
+        -- deliberately have no profile: they reject reasoning_effort there.
+        { match = "google/gemini-3.5-flash-lite", axis = "effort", default_state = "on",
+          can_disable = false, can_enable = true,
+          options = { "minimal", "low", "medium", "high" }, default_option = "minimal",
+          stance_map = { minimal = { option = "minimal" }, maximum = { option = "high" } } },
     },
     requesty = {
         -- Same meta-provider caveat as openrouter (mirrors it; forwards to the same backends).
@@ -1336,6 +1357,7 @@ ModelConstraints._web_search_providers = {
     { id = "xai",        label = "xAI",        mode = "capability:responses_web_search" },
     { id = "perplexity", label = "Perplexity", mode = "all" },
     { id = "openrouter", label = "OpenRouter", mode = "all" },
+    { id = "nanogpt",    label = "NanoGPT",    mode = "all" },
     { id = "zai",        label = "Z.AI",       mode = "all" },
     -- DashScope enable_search: server-side search injection, probed 2026-08-15
     -- (no sources returned on the compatible-mode wire — grounded answers, no
@@ -2521,7 +2543,7 @@ ModelConstraints.REASONING_WIRE_KEYS = {
     "deepseek_thinking", "zai_thinking", "sambanova_thinking", "kimi_thinking",
     "openrouter_reasoning", "requesty_reasoning", "groq_reasoning", "nvidia_reasoning",
     "together_reasoning", "fireworks_reasoning", "xai_reasoning", "opencode_reasoning",
-    "perplexity_reasoning", "custom_reasoning", "_reasoning",
+    "perplexity_reasoning", "nanogpt_reasoning", "custom_reasoning", "_reasoning",
 }
 
 --- Display-only: does this request's computed api_params actually ENABLE
@@ -2597,6 +2619,9 @@ function ModelConstraints.applyReasoningParams(provider, api_params, decision)
         -- can_disable=false so their minimal stance resolves to lowest effort, never off).
         if on then api_params.openrouter_reasoning = { effort = decision.effort }
         else api_params.openrouter_reasoning = { enabled = false } end
+    elseif provider == "nanogpt" then
+        if on then api_params.nanogpt_reasoning = { effort = decision.effort }
+        elseif decision.off_option then api_params.nanogpt_reasoning = { effort = decision.off_option } end
     elseif provider == "requesty" then
         if on then api_params.requesty_reasoning = { effort = decision.effort }
         else api_params.requesty_reasoning = { enabled = false } end

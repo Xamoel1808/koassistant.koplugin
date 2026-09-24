@@ -40,6 +40,7 @@ return {
     -- DeepSeek API key
     -- Get from: https://platform.deepseek.com/
     deepseek = "YOUR_DEEPSEEK_API_KEY",
+    nanogpt = "YOUR_NANOGPT_API_KEY",
     
     -- Google Gemini API key
     -- Get from: https://aistudio.google.com/

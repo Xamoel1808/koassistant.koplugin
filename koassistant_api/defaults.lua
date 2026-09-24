@@ -15,6 +15,7 @@ local function getDefaultModel(provider)
         anthropic = "claude-sonnet-5",
         openai = "gpt-6-sol",
         deepseek = "deepseek-v4-pro",
+        nanogpt = "z-ai/glm-5.3-flash",
         gemini = "gemini-3.5-flash",
         ollama = "llama4",
         groq = "openai/gpt-oss-120b",
@@ -93,6 +94,15 @@ local ProviderDefaults = {
             temperature = 0.7,
             max_tokens = 16384
         }
+    },
+    nanogpt = {
+        provider = "nanogpt",
+        model = getDefaultModel("nanogpt"),
+        base_url = "https://api.nano-gpt.com/api/v1/chat/completions",
+        additional_parameters = {
+            temperature = 0.7,
+            max_tokens = 16384,
+        },
     },
     ollama = {
         provider = "ollama",

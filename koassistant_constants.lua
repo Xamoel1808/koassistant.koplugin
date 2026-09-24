@@ -94,12 +94,12 @@ end
 -- Used for update checking and HTTP headers (OpenRouter)
 -- Single source of truth for repository location
 Constants.GITHUB = {
-    REPO_OWNER = "zeeyado",
+    REPO_OWNER = "Xamoel1808",
     REPO_NAME = "koassistant.koplugin",
-    URL = "https://github.com/zeeyado/koassistant.koplugin",
+    URL = "https://github.com/Xamoel1808/koassistant.koplugin",
     -- per_page=5: the checker only needs the newest releases; the default (30, with
     -- full markdown bodies) is hundreds of KB json.decode'd on the UI thread
-    API_URL = "https://api.github.com/repos/zeeyado/koassistant.koplugin/releases?per_page=5",
+    API_URL = "https://api.github.com/repos/Xamoel1808/koassistant.koplugin/releases?per_page=5",
 }
 
 -- Text extraction defaults (single source of truth)
