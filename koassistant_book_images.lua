@@ -1,6 +1,7 @@
 -- Images embedded in an EPUB/CBZ.  BusyBox unzip is available on KOReader's
 -- Kindle builds; use stdout extraction so archive paths never touch the disk.
 local BookImages = {}
+local MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 local function shellQuote(value)
     return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
@@ -80,7 +81,7 @@ function BookImages.list(path)
     for line in pipe:lines() do
         local size, name = line:match("^%s*(%d+)%s+%S+%s+%S+%s+(.+)%s*$")
         size = tonumber(size)
-        if size and name and size > 0 and size <= 15 * 1024 * 1024
+        if size and name and size > 0 and size <= MAX_IMAGE_BYTES
             and not name:find("[\r\n]") and not name:match("^%-")
             and imageExtension(name) then
             images[#images + 1] = {
@@ -106,22 +107,32 @@ function BookImages.extract(path, entry)
         or entry.name:find("[\r\n]") or entry.name:match("^%-") then
         return nil, "Unsupported book image."
     end
+    local command = "unzip -p " .. shellQuote(path) .. " " .. shellQuote(entry.name)
+        .. " 2>/dev/null"
+    local pipe = io.popen(command, "r")
+    if not pipe then return nil, "Could not extract the book image." end
     local base = os.tmpname()
     os.remove(base)
     local output = base .. "." .. imageExtension(entry.name)
-    local command = "unzip -p " .. shellQuote(path) .. " " .. shellQuote(entry.name)
-        .. " > " .. shellQuote(output) .. " 2>/dev/null"
-    os.execute(command)
-    local file = io.open(output, "rb")
-    if not file then return nil, "Could not extract the book image." end
-    local header = file:read(8) or ""
-    local size = file:seek("end") or 0
-    file:close()
-    local valid = (imageExtension(entry.name) == "png" and header:sub(1, 8) == "\137PNG\r\n\026\n")
-        or (imageExtension(entry.name) ~= "png" and header:sub(1, 3) == "\255\216\255")
-    if not valid or size == 0 or size > 15 * 1024 * 1024 then
+    local file = io.open(output, "wb")
+    if not file then pipe:close(); return nil, "Could not save the book image." end
+    local size, header, saved = 0, "", true
+    while true do
+        local chunk = pipe:read(math.min(64 * 1024, MAX_IMAGE_BYTES - size + 1))
+        if not chunk or chunk == "" then break end
+        size = size + #chunk
+        if size > MAX_IMAGE_BYTES then break end
+        if #header < 8 then header = header .. chunk:sub(1, 8 - #header) end
+        if not file:write(chunk) then saved = false; break end
+    end
+    if not file:close() then saved = false end
+    pipe:close()
+    local valid = size > 0 and size <= MAX_IMAGE_BYTES
+        and ((imageExtension(entry.name) == "png" and header == "\137PNG\r\n\026\n")
+            or (imageExtension(entry.name) ~= "png" and header:sub(1, 3) == "\255\216\255"))
+    if not valid or not saved then
         os.remove(output)
-        return nil, "The book image is invalid or too large."
+        return nil, saved and "The book image is invalid or too large." or "Could not save the book image."
     end
     return output
 end
