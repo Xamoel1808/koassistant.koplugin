@@ -2791,10 +2791,7 @@ function AskGPT:testProvider(provider_id)
     return
   end
 
-  -- Probe requests run in a subprocess. A silent model response must not freeze
-  -- KOReader's UI; the wall-clock guard also catches transports that ignore
-  -- the socket timeout while waiting for TLS/body data.
-  local function post(extra, done)
+  local function post(extra)
     local body = {
       model = model,
       messages = { { role = "user", content = "Reply with only: ok" } },
@@ -2807,30 +2804,19 @@ function AskGPT:testProvider(provider_id)
       ["Content-Length"] = tostring(#payload),
     }
     if auth then hdrs["Authorization"] = auth end
-
-    local finished = false
-    local cancel
-    cancel = BaseHandler.fetchAsync(url, {
+    local code, body, resp_headers = BaseHandler.fetchInSubprocess(url, {
       method = "POST", headers = hdrs, body = payload, timeout = 20,
-    }, function(code, response, resp_headers)
-      if finished then return end
-      finished = true
-      local recorded, record_err = pcall(function()
-        local RL = require("koassistant_rate_limits")
-        if RL.record(provider_id, key_model, RL.fromHeaders(resp_headers), "probe") then
-          logger.dbg("KOAssistant: test probe learned per-minute allowance",
-            RL.known(provider_id, key_model).limit_tokens, "for", provider_id, key_model)
-        end
-      end)
-      if not recorded then logger.warn("KOAssistant: test probe limit recording failed", record_err) end
-      done(code, response)
-    end)
-    UIManager:scheduleIn(25, function()
-      if finished then return end
-      finished = true
-      if cancel then cancel() end
-      done(nil, "request timed out after 25 seconds")
-    end)
+    })
+    -- Per-minute admission limits (docs/tpm_admission_plan.md): the probe's
+    -- response headers name the plan's tokens-per-minute allowance, so the
+    -- first real request is already sized to fit (Groq free: 8K/min against
+    -- a 32K default budget refused every request until this was learned).
+    local RL = require("koassistant_rate_limits")
+    if RL.record(provider_id, key_model, RL.fromHeaders(resp_headers), "probe") then
+      logger.dbg("KOAssistant: test probe learned per-minute allowance",
+        RL.known(provider_id, key_model).limit_tokens, "for", provider_id, key_model)
+    end
+    return code, body
   end
 
   local probe_tools = { { type = "function",
@@ -2842,16 +2828,20 @@ function AskGPT:testProvider(provider_id)
   local caps = {}     -- positive findings for the derived layer
 
   local steps = {
-    { label = _("Reachability"), evaluate = function(code, response)
+    { label = _("Reachability"), run = function()
+        local code, body = post(nil)
         local n = tonumber(code)
         if n == 200 then return true end
         if n == 401 or n == 403 then
           return false, T(_("auth failed (HTTP %1) - check the API key"), n)
         end
-        if not n then return false, T(_("network error: %1"), tostring(response)) end
+        if not n then return false, T(_("network error: %1"), tostring(body)) end
+        -- Surface the server's own explanation when it gives one: NVIDIA
+        -- retires models with a 410 whose body names the end-of-life date,
+        -- which "check base URL" would hide.
         local detail
-        if type(response) == "string" then
-          local ok, parsed = pcall(json.decode, response)
+        if type(body) == "string" then
+          local ok, parsed = pcall(json.decode, body)
           if ok and type(parsed) == "table" then
             local err = parsed.error
             detail = parsed.detail or parsed.message
@@ -2863,30 +2853,31 @@ function AskGPT:testProvider(provider_id)
         end
         return false, T(_("HTTP %1 - check base URL and model id"), n)
       end },
-    { label = _("Streaming (SSE)"), extra = { stream = true }, evaluate = function(code, response)
+    { label = _("Streaming (SSE)"), run = function()
+        local code, body = post({ stream = true })
         if tonumber(code) ~= 200 then return false, "HTTP " .. tostring(code) end
-        if type(response) == "string" and (response:find("^data:") or response:find("\ndata:")
-            or response:find("^event:") or response:find("\nevent:")) then
+        if type(body) == "string" and (body:find("^data:") or body:find("\ndata:")
+            or body:find("^event:") or body:find("\nevent:")) then
           return true
         end
         return false, _("200 but not SSE - streaming may be unsupported")
       end },
-    { label = _("Tool calling"), extra = { tools = probe_tools }, evaluate = function(code)
+    { label = _("Tool calling"), run = function()
+        local code = post({ tools = probe_tools })
         if tonumber(code) == 200 then
           caps.tools = true
           return true
         end
         return false, "HTTP " .. tostring(code)
       end },
-    { label = _("Forced tool use (book-tools search)"),
-      skip = function() return not caps.tools end,
-      extra = { tools = probe_tools, tool_choice = "required" },
-      evaluate = function(code)
+    { label = _("Forced tool use (book-tools search)"), run = function()
+        if not caps.tools then return nil, _("skipped - tools not accepted") end
+        local code = post({ tools = probe_tools, tool_choice = "required" })
         if tonumber(code) == 200 then return true end
         return false, T(_("HTTP %1 - book tools' search phase may not work"), tostring(code))
       end },
-    { label = _("Reasoning effort parameter"), extra = { reasoning_effort = "low" },
-      evaluate = function(code)
+    { label = _("Reasoning effort parameter"), run = function()
+        local code = post({ reasoning_effort = "low" })
         if tonumber(code) == 200 then
           caps.reasoning = true
           return true, _("accepted (some hosts silently ignore it)")
@@ -2903,37 +2894,25 @@ function AskGPT:testProvider(provider_id)
       self_ref:showProviderTestReport(provider, model, results, caps)
       return
     end
-    if step.skip and step.skip() then
-      table.insert(results, { label = step.label, ok = nil,
-        detail = _("skipped - tools not accepted") })
-      runNext()
-      return
-    end
     UIManager:show(Notification:new{
       text = T(_("Testing %1/%2: %3"), step_i, #steps, step.label),
       timeout = 1,
     })
+    -- Delayed so the notification paints before the synchronous request
     UIManager:scheduleIn(0.3, function()
-      local completed = false
-      local function finishStep(ok, detail)
-        if completed then return end
-        completed = true
-        table.insert(results, { label = step.label, ok = ok, detail = detail })
-        if step_i == 1 and ok == false then
-          self_ref:showProviderTestReport(provider, model, results, caps)
-        else
-          runNext()
-        end
+      -- A crashing step must render as a result, never a silent empty report
+      local run_ok, ok, detail = pcall(step.run)
+      if not run_ok then
+        detail = T(_("test error: %1"), tostring(ok))
+        ok = false
       end
-      local sent, err = pcall(post, step.extra, function(code, response)
-        local run_ok, ok, detail = pcall(step.evaluate, code, response)
-        if not run_ok then
-          detail = T(_("test error: %1"), tostring(ok))
-          ok = false
-        end
-        finishStep(ok, detail)
-      end)
-      if not sent then finishStep(false, T(_("test error: %1"), tostring(err))) end
+      table.insert(results, { label = step.label, ok = ok, detail = detail })
+      if step_i == 1 and ok == false then
+        -- Baseline failed: the rest would just repeat the same error
+        self_ref:showProviderTestReport(provider, model, results, caps)
+        return
+      end
+      runNext()
     end)
   end
   runNext()
