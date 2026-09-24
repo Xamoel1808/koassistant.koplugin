@@ -49,13 +49,24 @@ TestRunner:test("Web toggle and depth follow the request", function()
     assert(body.webSearch == nil and body.model == "z-ai/glm-5.3-flash")
 end)
 
-TestRunner:test("MiMo sends no unsupported effort; Gemini does", function()
+TestRunner:test("MiMo uses binary thinking; Gemini uses effort", function()
     local mimo = Constraints.resolveReasoning("nanogpt", "xiaomi/mimo-v2.6-flash",
-        { global_stance = "maximum" })
-    assert(mimo.axis == "none")
+        { global_stance = "minimal" })
+    assert(mimo.axis == "binary" and mimo.mode == "off")
     local params = {}
     Constraints.applyReasoningParams("nanogpt", params, mimo)
-    assert(params.nanogpt_reasoning == nil)
+    assert(params.nanogpt_reasoning.type == "disabled")
+    local off_body = Handler:buildRequestBody({}, { api_key = "test",
+        model = "xiaomi/mimo-v2.6-flash", api_params = params }).body
+    assert(off_body.thinking.type == "disabled" and off_body.reasoning_effort == nil)
+    for _, model in ipairs({ "xiaomi/mimo-v2.6-flash", "xiaomi/mimo-v2.6-pro" }) do
+        local on = Constraints.resolveReasoning("nanogpt", model,
+            { global_stance = "maximum" })
+        local on_params = {}
+        Constraints.applyReasoningParams("nanogpt", on_params, on)
+        assert(on.axis == "binary" and on.mode == "on")
+        assert(on_params.nanogpt_reasoning == nil)
+    end
     local gemini = Constraints.resolveReasoning("nanogpt", "google/gemini-3.5-flash-lite",
         { global_stance = "maximum" })
     Constraints.applyReasoningParams("nanogpt", params, gemini)

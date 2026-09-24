@@ -1118,8 +1118,12 @@ ModelConstraints.reasoning_profiles = {
           stance_map = { minimal = { state = "off" }, maximum = { state = "on", option = "high" } } },
     },
     nanogpt = {
-        -- This model supports an effort dial through NanoGPT. MiMo models
-        -- deliberately have no profile: they reject reasoning_effort there.
+        -- MiMo V2.6 defaults to thinking ON. NanoGPT forwards Xiaomi's binary
+        -- thinking.type switch; its reasoning_effort=low is rejected here.
+        { match = "xiaomi/mimo-v2.6-", axis = "binary", default_state = "on",
+          can_disable = true, can_enable = true,
+          stance_map = { minimal = { state = "off" }, maximum = { state = "on" } } },
+        -- Gemini Flash Lite accepts an effort dial through NanoGPT.
         { match = "google/gemini-3.5-flash-lite", axis = "effort", default_state = "on",
           can_disable = false, can_enable = true,
           options = { "minimal", "low", "medium", "high" }, default_option = "minimal",
@@ -2620,8 +2624,15 @@ function ModelConstraints.applyReasoningParams(provider, api_params, decision)
         if on then api_params.openrouter_reasoning = { effort = decision.effort }
         else api_params.openrouter_reasoning = { enabled = false } end
     elseif provider == "nanogpt" then
-        if on then api_params.nanogpt_reasoning = { effort = decision.effort }
-        elseif decision.off_option then api_params.nanogpt_reasoning = { effort = decision.off_option } end
+        if decision.axis == "binary" then
+            -- MiMo defaults to thinking ON, so only an explicit OFF needs a
+            -- wire parameter. Other NanoGPT families currently have no binary profile.
+            if not on then api_params.nanogpt_reasoning = { type = "disabled" } end
+        elseif on then
+            api_params.nanogpt_reasoning = { effort = decision.effort }
+        elseif decision.off_option then
+            api_params.nanogpt_reasoning = { effort = decision.off_option }
+        end
     elseif provider == "requesty" then
         if on then api_params.requesty_reasoning = { effort = decision.effort }
         else api_params.requesty_reasoning = { enabled = false } end

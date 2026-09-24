@@ -29,10 +29,12 @@ function Handler:customizeRequestBody(body, config)
             depth = effort == "thorough" and "deep" or "standard" }
     end
 
-    -- NanoGPT accepts this field globally, but individual hosted models may not.
-    -- The profile registry therefore grants it only for known compatible families.
+    -- The profile registry selects either Xiaomi's binary thinking switch or
+    -- NanoGPT's effort parameter for models known to accept it.
     local reasoning = config.api_params and config.api_params.nanogpt_reasoning
-    if reasoning and reasoning.effort then
+    if reasoning and reasoning.type then
+        body.thinking = { type = reasoning.type }
+    elseif reasoning and reasoning.effort then
         body.reasoning_effort = reasoning.effort
     end
     return body
