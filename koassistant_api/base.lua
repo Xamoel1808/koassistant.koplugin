@@ -685,12 +685,12 @@ end
 --- with the parent polling the pipe on the UI loop (the openai_codex_oauth
 --- pattern, generalized so other parent-side fetches — web-search backends —
 --- share one implementation instead of hand-copying the poll loop).
---- The child ships {status_code, body} through the pipe as JSON.
+--- The child ships {status_code, body, headers} through the pipe as JSON.
 --- @param url string
 --- @param opts table: same fields as fetchInSubprocess (method, headers, body,
 ---                    timeout); resolved_ip is filled here (parent-side DNS —
 ---                    a forked child must NEVER resolve on macOS)
---- @param on_done function(status_code|nil, body_or_error) — called once on the
+--- @param on_done function(status_code|nil, body_or_error, response_headers) — called once on the
 ---        UI loop; never called after cancel. May be called synchronously when
 ---        the subprocess cannot start.
 --- @return function|nil cancel: terminates the subprocess and suppresses on_done
@@ -699,7 +699,7 @@ function BaseHandler.fetchAsync(url, opts, on_done)
     local resolved_ip = BaseHandler.resolveForSubprocess(url)
     local fetch_fn = function(pid, child_write_fd)
         if not pid or not child_write_fd then return end
-        local ok, status_code, body = pcall(BaseHandler.fetchInSubprocess, url, {
+        local ok, status_code, body, resp_headers = pcall(BaseHandler.fetchInSubprocess, url, {
             method = opts.method,
             headers = opts.headers,
             body = opts.body,
@@ -707,7 +707,8 @@ function BaseHandler.fetchAsync(url, opts, on_done)
             resolved_ip = resolved_ip,
         })
         local payload = ok
-            and json.encode({ status_code = status_code, body = body or "" })
+            and json.encode({ status_code = status_code, body = body or "",
+                headers = resp_headers })
             or json.encode({ status_code = 0, body = tostring(status_code) })
         BaseHandler.writeAllToFD(child_write_fd, payload)
         ffi.C.close(child_write_fd)
@@ -737,7 +738,8 @@ function BaseHandler.fetchAsync(url, opts, on_done)
             local body = type(decoded.body) == "string" and decoded.body or ""
             -- The child encodes a transport error as status 0 + message body.
             if status == 0 then status = nil end
-            on_done(status, body)
+            local headers = type(decoded.headers) == "table" and decoded.headers or nil
+            on_done(status, body, headers)
         else
             on_done(nil, "failed to parse fetch subprocess response")
         end
