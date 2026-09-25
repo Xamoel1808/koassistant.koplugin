@@ -47,7 +47,10 @@ BRANDS = ["KOAssistant", "KOReader", "(KOA)"]
 PROVIDERS = [
     "Claude", "GPT", "OpenAI", "Anthropic", "DeepSeek", "Gemini",
     "Ollama", "Groq", "Mistral", "xAI", "OpenRouter", "Qwen",
-    "Kimi", "Together", "Fireworks", "SambaNova", "Cohere", "Doubao"
+    "Kimi", "Together", "Fireworks", "SambaNova", "Cohere", "Doubao",
+    "NanoGPT", "Requesty", "Z.AI", "Perplexity", "OpenCode", "OpenCode Go",
+    "Cerebras", "Chutes", "DeepInfra", "Featherless", "Hyperbolic",
+    "MiniMax", "Nebius", "Novita", "NVIDIA", "Vercel"
 ]
 
 # Keep as technical acronym - typically preserved in translations

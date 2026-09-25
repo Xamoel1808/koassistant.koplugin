@@ -103,6 +103,16 @@ function RequestInspector:getConfigSummary(config)
     local thinking = "Disabled"
     if api_params.thinking then
         thinking = "Enabled (budget: " .. (api_params.thinking.budget_tokens or "?") .. ")"
+    elseif api_params.nanogpt_reasoning then
+        local r = api_params.nanogpt_reasoning
+        thinking = "Enabled (NanoGPT " .. (r.effort or r.type or "on") .. ")"
+    elseif api_params.reasoning_effort then
+        thinking = "Enabled (effort: " .. tostring(api_params.reasoning_effort) .. ")"
+    elseif api_params.reasoning then
+        local r = api_params.reasoning
+        thinking = "Enabled (" .. (type(r) == "table" and (r.effort or r.max_tokens or "custom") or tostring(r)) .. ")"
+    elseif api_params.thinking_budget then
+        thinking = "Enabled (budget: " .. tostring(api_params.thinking_budget) .. ")"
     end
     table.insert(summary, { "Thinking", thinking })
 

@@ -56,8 +56,13 @@ fi
 # Remove lua-format flags — xgettext detects T() placeholders (%1, %2) as Lua
 # format specifiers, but they're not. False positives cause valid translations
 # to be marked fuzzy.
-sed -i '' '/^#, lua-format$/d' locale/koassistant.pot
-sed -i '' 's/#, fuzzy, lua-format/#, fuzzy/' locale/koassistant.pot
+if sed --version >/dev/null 2>&1; then
+    sed -i '/^#, lua-format$/d' locale/koassistant.pot
+    sed -i 's/#, fuzzy, lua-format/#, fuzzy/' locale/koassistant.pot
+else
+    sed -i '' '/^#, lua-format$/d' locale/koassistant.pot
+    sed -i '' 's/#, fuzzy, lua-format/#, fuzzy/' locale/koassistant.pot
+fi
 
 # Count strings in .pot (subtract 1 for the header entry)
 POT_COUNT=$(grep -c "^msgid " locale/koassistant.pot 2>/dev/null || echo "0")

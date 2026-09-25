@@ -89,6 +89,10 @@ end)
 -- request goes out, because a truncated whole-book prompt on a local model
 -- streams for minutes (device 2026-08-20).
 local UIManagerStub = package.loaded["ui/uimanager"]
+local orig_scheduleIn = UIManagerStub.scheduleIn
+local orig_show = UIManagerStub.show
+local orig_infomessage = package.loaded["ui/widget/infomessage"]
+local orig_backgroundRequest = OllamaHandler.backgroundRequest
 local scheduled, shown = {}, {}
 UIManagerStub.scheduleIn = function(_self, _t, fn) table.insert(scheduled, fn) end
 UIManagerStub.show = function(_self, w) table.insert(shown, w) end
@@ -113,23 +117,6 @@ TestRunner:test("a limited window warns before the request is sent", function()
     if not msg.text:find("8192", 1, true) then error("notice names the window") end
 end)
 
-TestRunner:test("a server that cannot be asked falls back to the after-the-fact report", function()
-    OllamaHandler.observed_context, OllamaHandler.probed = {}, {}
-    TestRunner:eq(send(BIG, {}), 0, "no window, no claim; the stream reports the cut instead")
-end)
-
-TestRunner:test("a window learned from a truncated reply warns the NEXT request", function()
-    OllamaHandler.observed_context, OllamaHandler.probed = {}, {}
-    OllamaHandler.recordObservedContext("gemma3:4b", 4096)
-    local count, msg = send(BIG, {})
-    TestRunner:eq(count, 1, "warned up front on the second try")
-    if not msg.text:find("4096", 1, true) then error("notice names the learned window") end
-end)
-
--- The default mode is where readers actually meet truncation, so "we cannot
--- know the window" is not an answer: ollama is asked. /api/ps reports the
--- EFFECTIVE window of a loaded runner; a cold model is loaded first with
--- ollama's own load-only call.
 local Base = require("koassistant_api.base")
 local real_fetch = Base.fetchInSubprocess
 local fetch_log = {}
@@ -152,6 +139,26 @@ local function stubServer(ps_window, opts)
         return nil, "unexpected url"
     end
 end
+
+TestRunner:test("a server that cannot be asked falls back to the after-the-fact report", function()
+    OllamaHandler.observed_context, OllamaHandler.probed = {}, {}
+    stubServer(nil, { load_fails = true })
+    TestRunner:eq(send(BIG, {}), 0, "no window, no claim; the stream reports the cut instead")
+    Base.fetchInSubprocess = real_fetch
+end)
+
+TestRunner:test("a window learned from a truncated reply warns the NEXT request", function()
+    OllamaHandler.observed_context, OllamaHandler.probed = {}, {}
+    OllamaHandler.recordObservedContext("gemma3:4b", 4096)
+    local count, msg = send(BIG, {})
+    TestRunner:eq(count, 1, "warned up front on the second try")
+    if not msg.text:find("4096", 1, true) then error("notice names the learned window") end
+end)
+
+-- The default mode is where readers actually meet truncation, so "we cannot
+-- know the window" is not an answer: ollama is asked. /api/ps reports the
+-- EFFECTIVE window of a loaded runner; a cold model is loaded first with
+-- ollama's own load-only call.
 
 TestRunner:test("server mode asks ollama for the real window, then warns", function()
     OllamaHandler.observed_context, OllamaHandler.probed = {}, {}
@@ -212,6 +219,13 @@ TestRunner:test("a prompt that fits says nothing", function()
     OllamaHandler.recordObservedContext("gemma3:4b", 4096)
     TestRunner:eq(send(SMALL, {}), 0, "learned window, still fits")
 end)
+
+-- Restore mocks so subsequent unit tests in the same Lua state are not contaminated
+UIManagerStub.scheduleIn = orig_scheduleIn
+UIManagerStub.show = orig_show
+package.loaded["ui/widget/infomessage"] = orig_infomessage
+OllamaHandler.backgroundRequest = orig_backgroundRequest
+Base.fetchInSubprocess = real_fetch
 
 print("")
 print(string.rep("-", 50))

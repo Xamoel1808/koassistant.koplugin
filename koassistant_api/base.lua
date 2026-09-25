@@ -646,8 +646,11 @@ function BaseHandler.fetchInSubprocess(url, opts)
     local su_ok, socketutil = pcall(require, "socketutil")
     if su_ok and socketutil then
         socketutil:set_timeout(timeout, -1)
-    elseif is_https then
-        https.TIMEOUT = timeout
+    else
+        http.TIMEOUT = timeout
+        if is_https then
+            https.TIMEOUT = timeout
+        end
     end
     -- Forked-child callers that pass opts.resolved_ip get the macOS
     -- DNS-in-child crash protection on plain http too (see urlWithResolvedIP);
@@ -840,8 +843,11 @@ function BaseHandler:backgroundRequest(url, headers, body)
                 local su_ok, socketutil = pcall(require, "socketutil")
                 if su_ok and socketutil then
                     socketutil:set_timeout(BaseHandler.SUBPROCESS_READ_TIMEOUT, -1)
-                elseif is_https then
-                    https.TIMEOUT = BaseHandler.SUBPROCESS_READ_TIMEOUT
+                else
+                    http.TIMEOUT = BaseHandler.SUBPROCESS_READ_TIMEOUT
+                    if is_https then
+                        https.TIMEOUT = BaseHandler.SUBPROCESS_READ_TIMEOUT
+                    end
                 end
 
                 -- macOS http (ollama, custom local providers): connect by the

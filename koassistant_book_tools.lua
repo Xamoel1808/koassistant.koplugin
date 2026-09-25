@@ -715,6 +715,7 @@ function BookTools:nativeCandidates(query, query_tokens, case_sensitive, ceiling
         entry = self:walkPattern(query, case_sensitive)
         if not entry then return nil, "The book search failed for this query." end
         table.insert(notes, "Every word of this query is very common, so only sentences holding the exact phrase were counted (single words and partial matches were not).")
+        if stats then stats.phrase_only = true end
     end
     if entry.capped then
         table.insert(notes, string.format("Only the first %d occurrences, from the start of the book, were checked; narrow the query for the rest.", self.native_max_hits))
@@ -787,6 +788,9 @@ function BookTools:scoreSentence(sentence, query, query_tokens, case_sensitive, 
             return 100 + math.min(#normalized_query, 40), "phrase"
         end
         return 90 + math.min(#normalized_query, 40), "substring"
+    end
+    if stats and stats.phrase_only then
+        return 0, nil
     end
     local count = #query_tokens
     if allTokensPresent(query_tokens, normalized_sentence) then

@@ -7,11 +7,6 @@ local VERBOSE_MOCKS = os.getenv("KOASSISTANT_VERBOSE_MOCKS")
 -- Mock logger (used by handlers for warnings and debug output)
 package.loaded["logger"] = {
     warn = function(...)
-        local args = {...}
-        local msg = table.concat(vim and vim.tbl_map(tostring, args) or {}, " ")
-        for i, v in ipairs(args) do
-            msg = (i == 1 and "" or msg .. " ") .. tostring(v)
-        end
         print("[WARN]", ...)
     end,
     dbg = function(...)

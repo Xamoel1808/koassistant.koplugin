@@ -120,6 +120,10 @@ function CohereHandler:query(message_history, config)
         print("Streaming enabled:", use_streaming and "yes" or "no")
     end
 
+    if use_streaming then
+        request_body.stream = true
+    end
+
     local requestBody = BaseHandler.encodeBody(request_body)
     local headers = {
         ["Content-Type"] = "application/json",
@@ -131,14 +135,9 @@ function CohereHandler:query(message_history, config)
 
     -- If streaming is enabled, return the background request function
     if use_streaming then
-        -- Add stream parameter to request body
-        local stream_request_body = json.decode(requestBody)
-        stream_request_body.stream = true
-        local stream_body = json.encode(stream_request_body)
-        headers["Content-Length"] = tostring(#stream_body)
         headers["Accept"] = "text/event-stream"
 
-        return self:backgroundRequest(base_url, headers, stream_body)
+        return self:backgroundRequest(base_url, headers, requestBody)
     end
 
     -- Non-streaming mode: use background request for non-blocking UI

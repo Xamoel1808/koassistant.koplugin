@@ -22,7 +22,9 @@ function Handler:customizeRequestBody(body, config)
         enabled = config.features and config.features.enable_web_search or false
     end
     -- A saved suffix can otherwise keep searching after the switch is off.
-    body.model = body.model:gsub(":online[%w%-%/]*$", "")
+    if type(body.model) == "string" then
+        body.model = body.model:gsub(":online[%w%-%/]*$", "")
+    end
     if enabled and not config.tools then
         local effort = ModelConstraints.webSearchEffort(config.features)
         body.webSearch = { enabled = true,
